@@ -899,6 +899,9 @@ export function mountDinoLegend(root) {
   let superCharges = 0;
   let superGranted = false;
   let superBurn = 0;
+  let imtiReady = false;
+  let imtiUsed = false;
+  let imtiFx = 0;
   let phase = "run";
   let intro = 0;
   let spawnCd = 1;
@@ -1104,6 +1107,71 @@ export function mountDinoLegend(root) {
     for (let i = 0; i < 4; i++) {
       clouds.push({ x: 80 + i * 180, y: 28 + (i % 3) * 26, s: 18 + (i % 3) * 8 });
     }
+  }
+
+  function fireImtiBlast() {
+    if (mode !== "play" || player.dead || intro > 0) return;
+    if (!imtiReady || imtiUsed) return;
+    if (!level) return;
+    // Must have crossed halfway (or carried into boss after doing so)
+    if (!superGranted && phase === "run" && dist < (level.length || 0) * 0.5) return;
+    imtiUsed = true;
+    imtiReady = false;
+    imtiFx = 0.85;
+    banner = "IMTI BLAST";
+    bannerT = 1.4;
+    hitstop = 0.16;
+    trauma = 1;
+    flashA = 0.55;
+    sfx.roar();
+    sfx.explode();
+    const m = mouthPos();
+    // Giant blue wave bolts (10× damage)
+    for (let i = 0; i < 14; i++) {
+      const yOff = -40 + i * 8;
+      entities.push({
+        kind: "bolt",
+        screen: true,
+        alive: true,
+        x: m.x,
+        y: m.y + yOff - 10,
+        w: 48,
+        h: 28,
+        vx: 900 + i * 8,
+        life: 1.1,
+        hittable: false,
+        hurts: false,
+        touched: [],
+        bossHit: false,
+        dmg: 10,
+        super: true,
+        imti: true,
+      });
+    }
+    // Instant cone damage so nothing "misses" the wave
+    for (const e of entities) {
+      if (!e.alive || !e.hittable || e.kind === "bolt") continue;
+      if (e.x + e.w < player.x + 20) continue;
+      if (e.x > player.x + 420) continue;
+      damageEnt(e, 10);
+    }
+    if (boss && boss.entered && !boss.dead) {
+      if (boss.vuln === false) {
+        // Still punch through a bit of armor — this is THE blast
+        boss.vuln = true;
+        boss.stun = Math.max(boss.stun || 0, 0.8);
+      }
+      const hit = 10;
+      boss.hp -= hit;
+      boss.hurtCd = 0.2;
+      boss.flash = 0.2;
+      popText(boss.x + 30, boss.y - 10, "IMTI -" + hit);
+      burst(boss.x + boss.w * 0.4, boss.y + 40, "#2ad0ff", 28, 320, { ring: true, big: true });
+      if (boss.hp <= 0) killBoss();
+    }
+    burst(m.x + 40, m.y, "#2ad0ff", 30, 360, { ring: true, big: true });
+    burst(m.x + 120, m.y, "#a0e8ff", 20, 280, { ring: true });
+    popText(player.x + 10, player.y - 30, "IMTI BLAST");
   }
 
   function requestJump() {
@@ -1813,15 +1881,20 @@ export function mountDinoLegend(root) {
     // Halfway through a level: grant 3 super-fire charges (3× damage each use)
     if (level && !superGranted && !gauntlet && phase === "run" && dist >= level.length * 0.5) {
       superGranted = true;
+      imtiReady = true;
       superCharges = 3;
       superBurn = 0;
-      banner = "SUPER FIRE ×3";
-      bannerT = 1.5;
+      banner = "SUPER FIRE ×3  ·  IMTI READY";
+      bannerT = 1.7;
       trauma = Math.min(1, trauma + 0.25);
       flashA = Math.max(flashA, 0.28);
       sfx.roar();
       burst(player.x + 50, player.y + 30, "#ff2a6a", 18, 220, { ring: true, big: true });
     }
+    // Boss phase still allows IMTI if unlocked during the run
+    if (superGranted && !imtiUsed) imtiReady = true;
+
+    if (imtiFx > 0) imtiFx = Math.max(0, imtiFx - dt);
 
     const breathing = keys.fire && !fireLock && heat > 0 && intro <= 0;
     if (breathing) {
@@ -2148,6 +2221,9 @@ export function mountDinoLegend(root) {
     superCharges = 0;
     superGranted = false;
     superBurn = 0;
+    imtiReady = false;
+    imtiUsed = false;
+    imtiFx = 0;
     score = 0;
     dist = 0;
     combo = 0;
@@ -2342,7 +2418,7 @@ export function mountDinoLegend(root) {
           ${locked ? `<p>Clear the previous mile to unlock this one. The roster above is what is waiting.</p>` : ""}
         </aside>
       </div>
-      <p class="help">Keyboard: Space or Up jumps, Down ducks, F or J breathes fire, P pauses. Reach halfway for SUPER FIRE ×3 (pink breath, 3× damage). Stars: clear the mile, beat par, and finish with at least four hearts.</p>
+      <p class="help">Keyboard: Space/Up jump, Down duck, F/J fire, P pause. Halfway unlocks SUPER FIRE ×3 (pink, 3×) and a one-shot IMTI BLAST (press I — blue, 10×, once per level). Stars: clear the mile, beat par, finish with ≥4 hearts.</p>
       <div class="foot">
         <button type="button" class="pill" id="btn-sound" data-act="sound">${save.sound ? "Sound on" : "Sound off"}</button>
         <button type="button" class="pill" id="btn-shake" data-act="shake">${save.shake ? "Shake on" : "Shake off"}</button>
@@ -2418,6 +2494,7 @@ export function mountDinoLegend(root) {
     if (code === "Space" || code === "ArrowUp" || code === "KeyW") return "jump";
     if (code === "ArrowDown" || code === "KeyS" || code === "ControlLeft" || code === "ControlRight") return "duck";
     if (code === "KeyF" || code === "KeyJ" || code === "KeyK") return "fire";
+    if (code === "KeyI") return "imti";
     if (code === "KeyP" || code === "Escape") return "pause";
     if (code === "Enter") return "confirm";
     return "";
@@ -2437,6 +2514,9 @@ export function mountDinoLegend(root) {
       else if (mode === "clear" && level) startLevel(Math.min(6, level.id + (level.id < 6 ? 1 : 0)));
     } else if (role === "duck") keys.duck = true;
     else if (role === "fire") keys.fire = true;
+    else if (role === "imti") {
+      if (mode === "play") fireImtiBlast();
+    }
     else if (role === "pause") {
       if (mode === "play" || mode === "pause") togglePause();
     } else if (role === "confirm") {
@@ -2850,12 +2930,28 @@ export function mountDinoLegend(root) {
       ctx.fillRect(x + 20, y + 12, 6, 6);
       ctx.globalAlpha = 1;
     } else if (e.kind === "bolt") {
-      ctx.fillStyle = "#ff4a10";
-      ctx.fillRect(x, y + 2, e.w, e.h - 2);
-      ctx.fillStyle = "#ffb020";
-      ctx.fillRect(x + 2, y, e.w - 4, e.h - 4);
-      ctx.fillStyle = "#fff4b0";
-      ctx.fillRect(x + 6, y + 3, 10, 5);
+      if (e.imti) {
+        ctx.fillStyle = "#1a60c8";
+        ctx.fillRect(x, y + 2, e.w, e.h - 2);
+        ctx.fillStyle = "#2ad0ff";
+        ctx.fillRect(x + 2, y, e.w - 4, e.h - 4);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(x + 6, y + 3, 14, 6);
+      } else if (e.super) {
+        ctx.fillStyle = "#ff2a6a";
+        ctx.fillRect(x, y + 2, e.w, e.h - 2);
+        ctx.fillStyle = "#ff8ac8";
+        ctx.fillRect(x + 2, y, e.w - 4, e.h - 4);
+        ctx.fillStyle = "#fff0f8";
+        ctx.fillRect(x + 6, y + 3, 10, 5);
+      } else {
+        ctx.fillStyle = "#ff4a10";
+        ctx.fillRect(x, y + 2, e.w, e.h - 2);
+        ctx.fillStyle = "#ffb020";
+        ctx.fillRect(x + 2, y, e.w - 4, e.h - 4);
+        ctx.fillStyle = "#fff4b0";
+        ctx.fillRect(x + 6, y + 3, 10, 5);
+      }
     }
     if (e.flash > 0 && e.kind !== "bolt") {
       ctx.globalAlpha = 0.45;
@@ -3245,6 +3341,35 @@ export function mountDinoLegend(root) {
   }
 
   function drawBreath() {
+    if (imtiFx > 0 && mode === "play") {
+      const m = mouthPos();
+      const a = imtiFx / 0.85;
+      const len = 420 * (1.1 - a * 0.3);
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, a * 1.2);
+      for (let i = 0; i < 40; i++) {
+        const p = i / 40;
+        const s = (1 - p) * 28 + 6;
+        const wob = Math.sin(i * 3 + t * 40) * p * 30;
+        const px = m.x + p * len - s / 2;
+        const py = m.y + wob - s / 2;
+        let col = "#0a2040";
+        if (p < 0.2) col = "#ffffff";
+        else if (p < 0.45) col = "#a0e8ff";
+        else if (p < 0.75) col = "#2ad0ff";
+        else col = "#1a60c8";
+        ctx.fillStyle = col;
+        ctx.fillRect(Math.round(px), Math.round(py), Math.ceil(s), Math.ceil(s * 1.4));
+      }
+      ctx.globalAlpha = a * 0.35;
+      ctx.fillStyle = "#2ad0ff";
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+      const hs = 3;
+      drawText(ctx, "IMTI BLAST", Math.round(W / 2 - measure("IMTI BLAST", hs) / 2), 70, hs, "#ffffff");
+      drawText(ctx, "IMTI BLAST", Math.round(W / 2 - measure("IMTI BLAST", hs) / 2) + 1, 71, hs, "#2ad0ff");
+      ctx.restore();
+    }
     const breathing = mode === "play" && !player.dead && keys.fire && !fireLock && heat > 0;
     if (!breathing) return;
     const m = mouthPos();
@@ -3305,6 +3430,15 @@ export function mountDinoLegend(root) {
         ctx.fillRect(ox + i * (seg + 3), 28, seg, seg);
       }
       ctx.globalAlpha = 1;
+      const ix = ox + 3 * (seg + 3) + 10;
+      if (imtiReady && !imtiUsed) {
+        drawText(ctx, "I:IMTI", ix, 28, hs, "#2ad0ff");
+      } else if (imtiUsed) {
+        drawText(ctx, "IMTI", ix, 28, hs, color);
+        ctx.globalAlpha = 0.35;
+        drawText(ctx, "IMTI", ix, 28, hs, color);
+        ctx.globalAlpha = 1;
+      }
     }
     ctx.globalAlpha = 1;
     if (combo >= 2) drawText(ctx, "x" + Math.min(8, combo), segX + 10 * (seg + 3) + 8, 28, hs, "#e85d04");
