@@ -896,6 +896,9 @@ export function mountDinoLegend(root) {
   let hearts = 5;
   let heat = 100;
   let fireLock = false;
+  let superCharges = 0;
+  let superGranted = false;
+  let superBurn = 0;
   let phase = "run";
   let intro = 0;
   let spawnCd = 1;
@@ -1530,10 +1533,10 @@ export function mountDinoLegend(root) {
     }
   }
 
-  function damageEnt(e) {
+  function damageEnt(e, amt) {
     if (!e.alive || !e.hittable || (e.delay && e.delay > 0)) return;
     if (e.kind === "shade" && !e.solid) return;
-    e.hp -= 1;
+    e.hp -= (amt == null ? 1 : amt);
     e.flash = 0.08;
     burst(e.x + e.w / 2, e.y + e.h / 2, "#e85d04", 4, 80);
     if (e.hp > 0) {
@@ -1807,6 +1810,19 @@ export function mountDinoLegend(root) {
     scroll += speed * dt;
     driftClouds(dt);
 
+    // Halfway through a level: grant 3 super-fire charges (3× damage each use)
+    if (level && !superGranted && !gauntlet && phase === "run" && dist >= level.length * 0.5) {
+      superGranted = true;
+      superCharges = 3;
+      superBurn = 0;
+      banner = "SUPER FIRE ×3";
+      bannerT = 1.5;
+      trauma = Math.min(1, trauma + 0.25);
+      flashA = Math.max(flashA, 0.28);
+      sfx.roar();
+      burst(player.x + 50, player.y + 30, "#ff2a6a", 18, 220, { ring: true, big: true });
+    }
+
     const breathing = keys.fire && !fireLock && heat > 0 && intro <= 0;
     if (breathing) {
       heat -= 48 * dt;
@@ -1819,20 +1835,44 @@ export function mountDinoLegend(root) {
         fireSfx = 0.11;
         sfx.fire();
       }
+      // One super charge fuels ~0.55s of 3× breath, then burns a charge
+      if (superCharges > 0) {
+        superBurn += dt;
+        if (superBurn >= 0.55) {
+          superBurn = 0;
+          superCharges -= 1;
+          if (superCharges > 0) {
+            popText(player.x + 20, player.y - 10, "SUPER " + superCharges);
+          } else {
+            popText(player.x + 20, player.y - 10, "SUPER OUT");
+            banner = "SUPER SPENT";
+            bannerT = 0.9;
+          }
+        }
+      }
       boltCd -= dt;
       if (boltCd <= 0) {
-        boltCd = 0.065;
+        boltCd = superCharges > 0 || superBurn > 0 ? 0.05 : 0.065;
         const m = mouthPos();
+        const isSuper = superCharges > 0 || (superBurn > 0 && superBurn < 0.55);
+        // After charge just consumed mid-burst, still finish the current 0.55s window as super
+        // (handled by checking we still have charge OR just burned this window)
+        const dmg = isSuper ? 3 : 1;
         entities.push({
-          kind: "bolt", screen: true, alive: true, x: m.x, y: m.y - 7, w: 24, h: 14,
-          vx: 680, life: 0.85, hittable: false, hurts: false, touched: [], bossHit: false,
+          kind: "bolt", screen: true, alive: true, x: m.x, y: m.y - 7, w: isSuper ? 32 : 24, h: isSuper ? 18 : 14,
+          vx: isSuper ? 760 : 680, life: 0.85, hittable: false, hurts: false, touched: [], bossHit: false,
+          dmg, super: isSuper,
         });
-        burst(m.x, m.y, "#e85d04", 3, 55, { g: 200 });
-        if (Math.random() < 0.4) burst(m.x - 6, m.y + 4, "#f7f7f7", 1, 30, { g: 100 });
+        burst(m.x, m.y, isSuper ? "#ff2a6a" : "#e85d04", isSuper ? 6 : 3, isSuper ? 90 : 55, { g: 200 });
+        if (Math.random() < (isSuper ? 0.7 : 0.4)) burst(m.x - 6, m.y + 4, isSuper ? "#ffe0f0" : "#f7f7f7", 1, 30, { g: 100 });
       }
     } else {
       boltCd = 0;
       heat = Math.min(100, heat + 22 * dt);
+      // Don't burn charge while not firing
+      if (superBurn > 0 && superBurn < 0.55) {
+        // keep partial burn so releasing early doesn't waste whole charge mid-window awkwardly
+      }
     }
 
     if (player.onGround && !player.duck) {
@@ -1927,7 +1967,7 @@ export function mountDinoLegend(root) {
         if (b.touched.indexOf(e) !== -1) continue;
         if (overlap(b, e)) {
           b.touched.push(e);
-          damageEnt(e);
+          damageEnt(e, b.dmg || 1);
         }
       }
       if (boss && boss.entered && !boss.dead && !b.bossHit && boss.hurtCd <= 0) {
@@ -1940,11 +1980,13 @@ export function mountDinoLegend(root) {
             continue;
           }
           b.bossHit = true;
-          boss.hp -= 1;
-          boss.hurtCd = 0.11;
+          const hit = b.dmg || 1;
+          boss.hp -= hit;
+          boss.hurtCd = hit > 1 ? 0.08 : 0.11;
           boss.flash = 0.07;
-          trauma = Math.min(1, trauma + 0.12);
-          burst(b.x, b.y, "#e85d04", 3, 70);
+          trauma = Math.min(1, trauma + (hit > 1 ? 0.2 : 0.12));
+          burst(b.x, b.y, hit > 1 ? "#ff2a6a" : "#e85d04", hit > 1 ? 8 : 3, hit > 1 ? 120 : 70);
+          if (hit > 1) popText(boss.x + 20, boss.y, "-" + hit);
           sfx.tick();
           if (boss.hp <= 0) killBoss();
         }
@@ -2103,6 +2145,9 @@ export function mountDinoLegend(root) {
     hearts = save.plus ? 4 : 5;
     heat = 100;
     fireLock = false;
+    superCharges = 0;
+    superGranted = false;
+    superBurn = 0;
     score = 0;
     dist = 0;
     combo = 0;
@@ -2297,7 +2342,7 @@ export function mountDinoLegend(root) {
           ${locked ? `<p>Clear the previous mile to unlock this one. The roster above is what is waiting.</p>` : ""}
         </aside>
       </div>
-      <p class="help">Keyboard: Space or Up jumps, Down ducks, F or J breathes fire, P pauses. Tap the desert or the buttons. Stars: clear the mile, beat par, and finish with at least four hearts.</p>
+      <p class="help">Keyboard: Space or Up jumps, Down ducks, F or J breathes fire, P pauses. Reach halfway for SUPER FIRE ×3 (pink breath, 3× damage). Stars: clear the mile, beat par, and finish with at least four hearts.</p>
       <div class="foot">
         <button type="button" class="pill" id="btn-sound" data-act="sound">${save.sound ? "Sound on" : "Sound off"}</button>
         <button type="button" class="pill" id="btn-shake" data-act="shake">${save.shake ? "Shake on" : "Shake off"}</button>
@@ -3203,26 +3248,27 @@ export function mountDinoLegend(root) {
     const breathing = mode === "play" && !player.dead && keys.fire && !fireLock && heat > 0;
     if (!breathing) return;
     const m = mouthPos();
-    const len = 120 + Math.min(80, heat * 0.6);
-    // Trailer-style fire stream
-    for (let i = 0; i < 28; i++) {
+    const isSuper = superCharges > 0;
+    const len = (isSuper ? 150 : 120) + Math.min(80, heat * 0.6);
+    // Trailer-style fire stream (pink/white when super)
+    for (let i = 0; i < (isSuper ? 36 : 28); i++) {
       const a = (i / 28 + t * 2.2) % 1;
-      const s = (1 - a) * 14 + 3;
+      const s = (1 - a) * (isSuper ? 18 : 14) + 3;
       const wob = Math.sin(i * 5 + t * 28) * a * len * 0.12;
       const px = m.x + a * len - s / 2;
       const py = m.y + wob - s / 2;
-      let col = "#5a2a20";
-      if (a < 0.22) col = "#fff4b0";
-      else if (a < 0.5) col = "#ffb020";
-      else if (a < 0.78) col = "#ff4a10";
+      let col = isSuper ? "#4a1030" : "#5a2a20";
+      if (a < 0.22) col = isSuper ? "#fff0f8" : "#fff4b0";
+      else if (a < 0.5) col = isSuper ? "#ff8ac8" : "#ffb020";
+      else if (a < 0.78) col = isSuper ? "#ff2a6a" : "#ff4a10";
       ctx.fillStyle = col;
       ctx.fillRect(Math.round(px), Math.round(py), Math.ceil(s), Math.ceil(s));
     }
     // Core jet
     ctx.globalAlpha = 0.85;
-    ctx.fillStyle = "#fff4b0";
+    ctx.fillStyle = isSuper ? "#fff0f8" : "#fff4b0";
     ctx.fillRect(m.x, m.y - 4, 28, 8);
-    ctx.fillStyle = "#ff6a1a";
+    ctx.fillStyle = isSuper ? "#ff2a6a" : "#ff6a1a";
     ctx.fillRect(m.x + 20, m.y - 3, 36, 6);
     ctx.globalAlpha = 1;
   }
@@ -3247,6 +3293,18 @@ export function mountDinoLegend(root) {
       ctx.fillStyle = heat > i * 10 ? "#e85d04" : color;
       ctx.globalAlpha = heat > i * 10 ? 1 : 0.35;
       ctx.fillRect(segX + i * (seg + 3), 28, seg, seg);
+    }
+    ctx.globalAlpha = 1;
+    if (superCharges > 0 || superGranted) {
+      const sx = segX + 10 * (seg + 3) + 10;
+      drawText(ctx, "SUPER", sx, 28, hs, superCharges > 0 ? "#ff2a6a" : color);
+      const ox = sx + measure("SUPER", hs) + 6;
+      for (let i = 0; i < 3; i++) {
+        ctx.fillStyle = i < superCharges ? "#ff2a6a" : color;
+        ctx.globalAlpha = i < superCharges ? 1 : 0.3;
+        ctx.fillRect(ox + i * (seg + 3), 28, seg, seg);
+      }
+      ctx.globalAlpha = 1;
     }
     ctx.globalAlpha = 1;
     if (combo >= 2) drawText(ctx, "x" + Math.min(8, combo), segX + 10 * (seg + 3) + 8, 28, hs, "#e85d04");
