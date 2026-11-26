@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #f7f7f7;
+  --color-ink: #535353;
+  --color-fire: #e85d04;
+  --font-pixel: "Press Start 2P", ui-monospace, monospace;
+}
+
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  html,
+  body {
+    height: 100%;
+    background: var(--color-paper);
+    color: var(--color-ink);
+  }
+}
+
+.game-shell {
+  position: fixed;
+  inset: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+.dino-root {
+  width: 100%;
+  height: 100%;
+}
+
+.boot-title,
+.boot-sub {
+  font-family: var(--font-pixel);
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+}
+
+.boot-title {
+  padding-top: 1.5rem;
+  font-size: 1.05rem;
+  line-height: 1.6;
+  text-transform: uppercase;
+}
+
+.boot-sub {
+  margin-top: 0.75rem;
+  font-size: 0.62rem;
+  line-height: 1.7;
+  opacity: 0.8;
+}
