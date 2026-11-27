@@ -1592,6 +1592,7 @@ export function mountDinoLegend(root) {
     flashA = 0.18;
     sfx.hit();
     combo = 0;
+    style.hit();
     if (hearts <= 0) {
       player.dead = true;
       player.duck = false;
@@ -1601,31 +1602,155 @@ export function mountDinoLegend(root) {
     }
   }
 
+  function inflate(box, pad) {
+    return { x: box.x - pad, y: box.y - pad, w: box.w + pad * 2, h: box.h + pad * 2 };
+  }
+
+  function stomp(e) {
+    airChain += 1;
+    e._fromStomp = true;
+    const dmg = e.stompDmg || (ENEMIES[e.kind] && ENEMIES[e.kind].stompDmg) || 2;
+    damageEnt(e, dmg);
+    player.vy = JUMP_V * 0.82;
+    player.onGround = false;
+    coyote = 0;
+    heat = Math.min(100, heat + 18);
+    style.add(12 + airChain * 4, "STOMP x" + airChain);
+    style.note("stomp");
+    if (airChain > 1) style.note("chain");
+    hitstop = 0.06;
+    trauma = Math.min(1, trauma + 0.18);
+    camZoom = Math.max(camZoom, 1.03);
+    burst(e.x + e.w / 2, e.y, "#fff", 8, 160);
+    sfx.tick();
+    score += Math.round(15 * style.mult() * Math.min(5, airChain));
+  }
+
+  function graze(e) {
+    style.add(6, "GRAZE");
+    style.note("graze");
+    heat = Math.min(100, heat + 6);
+    score += Math.round(10 * style.mult());
+    popText(e.x, e.y - 8, "GRAZE");
+    hitstop = Math.max(hitstop, 0.04);
+  }
+
+  function tryParry() {
+    if (parryWindow <= 0) return false;
+    const m = mouthPos();
+    let hit = false;
+    for (const e of entities) {
+      if (!e.alive || e.kind !== "proj" || !e.hurts) continue;
+      const dx = e.x + e.w / 2 - m.x;
+      const dy = e.y + e.h / 2 - m.y;
+      if (Math.hypot(dx, dy) < 46) {
+        e.kind = "bolt";
+        e.vx = 720;
+        e.vy = 0;
+        e.dmg = 4;
+        e.life = 1.2;
+        e.hurts = false;
+        e.hittable = false;
+        e.touched = [];
+        e.bossHit = false;
+        e.super = true;
+        e.screen = true;
+        heat = Math.min(100, heat + 30);
+        hitstop = 0.07;
+        flashA = Math.max(flashA, 0.2);
+        style.add(25, "PARRY");
+        style.note("parry");
+        camZoom = Math.max(camZoom, 1.02);
+        burst(m.x, m.y, "#ffd700", 12, 160, { ring: true });
+        popText(m.x, m.y - 20, "PARRY");
+        sfx.explode();
+        hit = true;
+      }
+    }
+    return hit;
+  }
+
+  function doDiveSlamLand() {
+    if (!diveSlam) return;
+    diveSlam = false;
+    if (heat < 10) return;
+    heat = Math.max(0, heat - 25);
+    style.add(18, "SLAM");
+    trauma = Math.min(1, trauma + 0.35);
+    hitstop = 0.08;
+    camZoom = Math.max(camZoom, 1.04);
+    burst(player.x + 40, GROUND - 4, "#e85d04", 16, 200, { ring: true, big: true });
+    sfx.explode();
+    const cx = player.x + 44;
+    for (const e of entities) {
+      if (!e.alive || !e.hittable) continue;
+      const ex = e.x + e.w / 2;
+      if (Math.abs(ex - cx) < 70 && e.y + e.h > GROUND - 80) {
+        if (e.armor) e.armor = false;
+        damageEnt(e, 3);
+      }
+    }
+    if (boss && boss.entered && !boss.dead) {
+      const bx = boss.x + boss.w / 2;
+      if (Math.abs(bx - cx) < 90) {
+        if (boss.vuln === false) {
+          boss.vuln = true;
+          boss.stun = Math.max(boss.stun || 0, 0.8);
+        }
+        boss.hp -= 3;
+        boss.flash = 0.12;
+        if (boss.hp <= 0) killBoss();
+      }
+    }
+  }
+
   function damageEnt(e, amt) {
     if (!e.alive || !e.hittable || (e.delay && e.delay > 0)) return;
     if (e.kind === "shade" && !e.solid) return;
-    e.hp -= (amt == null ? 1 : amt);
+    const def = ENEMIES[e.kind];
+    const amount = amt == null ? 1 : amt;
+    if (def && def.onHit && def.onHit(e, amount, enemyApi())) return;
+    e.hp -= amount;
     e.flash = 0.08;
+    e.x += 8; // micro knockback
     burst(e.x + e.w / 2, e.y + e.h / 2, "#e85d04", 4, 80);
     if (e.hp > 0) {
       sfx.tick();
       return;
     }
     e.alive = false;
-    const base = PTS[e.kind] || 10;
-    const pts = Math.round(base * Math.min(3, 1 + combo * 0.25));
+    const base = PTS[e.kind] || (def && def.pts) || 10;
+    const pts = Math.round(base * Math.min(3, 1 + combo * 0.25) * style.mult());
     score += pts;
     combo += 1;
     comboT = 1.65;
+    style.add(8 + combo * 2, null);
     popText(e.x, e.y - 6, "+" + pts);
-    burst(e.x + e.w / 2, e.y + e.h / 2, e.kind === "meteor" || e.kind === "proj" ? "#e85d04" : inkOf(), 12, 170);
+    materialDeath(e, chunks, burst, enemyApi());
     sfx.explode();
     trauma = Math.min(1, trauma + (e.kind === "golem" ? 0.4 : 0.22));
-    hitstop = e.kind === "golem" ? 0.05 : 0.03;
-    if (e.kind === "beetle") {
+    hitstop = e.kind === "golem" ? 0.08 : 0.03;
+    if (e.kind === "beetle" && !def) {
       spawnBeetle(true, e.x);
       spawnBeetle(true, e.x + 30);
     }
+  }
+
+  function enemyApi() {
+    return {
+      player, W, H, GROUND, speed, sfx, popText, burst,
+      shake: (n) => { trauma = Math.min(1, trauma + n); },
+      spark: (x, y) => burst(x, y, "#ffb040", 6, 100),
+      spawnWave: (x) => {
+        make({ kind: "proj", visual: "shock", screen: true, x: x - 20, y: GROUND - 24, w: 80, h: 24, hp: 1, hittable: true, hurts: true, vx: -120, life: 0.6 });
+      },
+      spawnProj: (x, y, dx, dy) => {
+        const len = Math.hypot(dx, dy) || 1;
+        make({ kind: "proj", screen: true, x, y, w: 14, h: 14, hp: 1, hittable: true, hurts: true, vx: (dx / len) * 280, vy: (dy / len) * 280, life: 2.2 });
+      },
+      spawnBeetleMini: (x) => spawnBeetle(true, x),
+      dropHeat: (x, y) => { heat = Math.min(100, heat + 35); popText(x, y, "HEAT+"); },
+    };
   }
 
   function physics(dt) {
@@ -1804,6 +1929,10 @@ export function mountDinoLegend(root) {
 
   function update(dt) {
     t += dt;
+    style.update(dt);
+    stepChunks(chunks, dt, GROUND);
+    parryWindow = Math.max(0, parryWindow - dt);
+    camZoom += (1 - camZoom) * Math.min(1, dt * 8);
     trauma = Math.max(0, trauma - dt * 1.35);
     flashA = Math.max(0, flashA - dt * 1.8);
     bannerT = Math.max(0, bannerT - dt);
@@ -2000,6 +2129,9 @@ export function mountDinoLegend(root) {
         }
       }
       updateEntExtra(e, dt);
+      if (ENEMIES[e.kind] && ENEMIES[e.kind].ai) {
+        ENEMIES[e.kind].ai(e, dt, enemyApi());
+      }
       if (e.kind === "meteor" && e.y + e.h >= GROUND - 2) {
         e.alive = false;
         let cx = e.x;
@@ -2020,7 +2152,19 @@ export function mountDinoLegend(root) {
     const box = playerBox();
     for (const e of entities) {
       if (!e.alive || !e.hurts || (e.delay && e.delay > 0)) continue;
-      if (overlap(box, e)) hurt();
+      const stompable = e.stompable || (ENEMIES[e.kind] && ENEMIES[e.kind].stompable);
+      if (overlap(box, e)) {
+        if (stompable && player.vy > 120 && (box.y + box.h) - e.y < 28) {
+          stomp(e);
+          continue;
+        }
+        hurt();
+        continue;
+      }
+      if (!e.grazed && e.hurts && overlap(inflate(box, 12), e)) {
+        e.grazed = true;
+        graze(e);
+      }
     }
 
     if (boss && boss.entered && !boss.dead) {
@@ -2069,7 +2213,7 @@ export function mountDinoLegend(root) {
     if (intro <= 0 && !player.dead && phase === "run" && level) {
       runT += dt;
       dist += speed * dt;
-      score += speed * dt * 0.05;
+      score += speed * dt * 0.05 * style.mult();
       if (!gauntlet && dist >= level.length) {
         if (level.boss) beginBoss();
         else win();
@@ -2418,7 +2562,7 @@ export function mountDinoLegend(root) {
           ${locked ? `<p>Clear the previous mile to unlock this one. The roster above is what is waiting.</p>` : ""}
         </aside>
       </div>
-      <p class="help">Keyboard: Space/Up jump, Down duck, F/J fire, P pause. Halfway unlocks SUPER FIRE ×3 (pink, 3×) and a one-shot IMTI BLAST (press I — blue, 10×, once per level). Stars: clear the mile, beat par, finish with ≥4 hearts.</p>
+      <p class="help">Jump / Duck / Fire (F). Stomp foes mid-air · Duck in air = dive-slam · Tap fire near a projectile to PARRY · Near-miss = GRAZE. Halfway: SUPER ×3 + IMTI (I). Style rank multiplies score. Stars: clear, beat par, ≥4 hearts.</p>
       <div class="foot">
         <button type="button" class="pill" id="btn-sound" data-act="sound">${save.sound ? "Sound on" : "Sound off"}</button>
         <button type="button" class="pill" id="btn-shake" data-act="shake">${save.shake ? "Shake on" : "Shake off"}</button>
@@ -2511,9 +2655,15 @@ export function mountDinoLegend(root) {
       else if (mode === "dash") startLevel(selected);
       else if (mode === "pause") togglePause();
       else if (mode === "over" && level) startLevel(level.id);
-      else if (mode === "clear" && level) startLevel(Math.min(6, level.id + (level.id < 6 ? 1 : 0)));
+      else if (mode === "clear" && level) startLevel(Math.min(LEVELS.length, level.id + 1));
     } else if (role === "duck") keys.duck = true;
-    else if (role === "fire") keys.fire = true;
+    else if (role === "fire") {
+      keys.fire = true;
+      if (mode === "play" && !player.dead) {
+        parryWindow = 0.14;
+        tryParry();
+      }
+    }
     else if (role === "imti") {
       if (mode === "play") fireImtiBlast();
     }
@@ -2774,6 +2924,7 @@ export function mountDinoLegend(root) {
     drawPlayer();
     for (const e of list) if (e.kind === "bolt") drawEnt(e);
     drawBreath();
+    drawChunks(ctx, chunks);
 
     for (const p of particles) {
       const a = Math.max(0, p.life / p.max);
@@ -2809,6 +2960,11 @@ export function mountDinoLegend(root) {
   }
 
   function drawEnt(e) {
+    if (ENEMIES[e.kind] && ENEMIES[e.kind].draw) {
+      ENEMIES[e.kind].draw(ctx, e, enemyApi());
+      return;
+    }
+
     if (!art) return;
     const x = Math.round(e.x);
     const y = Math.round(e.y);
@@ -3420,6 +3576,23 @@ export function mountDinoLegend(root) {
       ctx.fillRect(segX + i * (seg + 3), 28, seg, seg);
     }
     ctx.globalAlpha = 1;
+    // Style rank
+    {
+      const st = style.snapshot();
+      const rankCol = st.rank === "S" ? "#ff2a6a" : st.rank === "A" ? "#ffb020" : st.rank === "B" ? "#2ad0ff" : color;
+      drawText(ctx, "RANK " + st.rank, 10, 48, hs, rankCol);
+      const barW = 60;
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.3;
+      ctx.fillRect(10 + measure("RANK " + st.rank, hs) + 8, 48, barW, hs * 4);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = rankCol;
+      ctx.fillRect(10 + measure("RANK " + st.rank, hs) + 8, 48, barW * Math.min(1, st.v / 350), hs * 4);
+      if (st.lastPopT > 0 && st.lastPop) {
+        drawText(ctx, st.lastPop, W / 2 - measure(st.lastPop, hs) / 2, 100, hs, rankCol);
+      }
+    }
+
     if (superCharges > 0 || superGranted) {
       const sx = segX + 10 * (seg + 3) + 10;
       drawText(ctx, "SUPER", sx, 28, hs, superCharges > 0 ? "#ff2a6a" : color);
