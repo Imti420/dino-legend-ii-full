@@ -672,6 +672,9 @@ const CSS = `
 .strip[data-biome="foundry"] { background: #6a5a48; } .strip[data-biome="foundry"]::before { background: #ffb040; }
 .strip[data-biome="marsh"] { background: #0a1410; } .strip[data-biome="marsh"]::before { background: #6affc0; }
 .strip[data-biome="omega"] { background: #030308; } .strip[data-biome="omega"]::before { background: #ff2a6a; }
+.card.lock { opacity: 0.75; filter: grayscale(0.4); }
+.lock-msg { color: #e85d04; font-weight: 700; margin: 8px 0; line-height: 1.35; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
 .stars { display: inline-flex; gap: 3px; align-items: center; }
 .stars svg { display: block; }
 .detail { border: 3px solid #535353; padding: 12px; }
@@ -2433,22 +2436,52 @@ export function mountDinoLegend(root) {
     sfx.click();
   }
   function startLevel(id) {
+    id = Number(id) || 0;
     const L = LEVELS[id - 1];
-    if (!L || id > save.unlocked) return;
-    unlock();
-    gauntlet = false;
-    if (save.daily) reseedDaily();
-    level = L;
-    biome = BIOMES[L.biome];
-    selected = id;
-    save.selected = id;
-    persist();
-    resetSim();
-    mode = "play";
-    app.dataset.mode = "play";
-    stage.style.background = biome.bg;
-    renderOverlay(0);
-    sfx.click();
+    const unlocked = Math.max(1, Number(save.unlocked) || 1);
+    if (!L) {
+      mode = "dash";
+      app.dataset.mode = "dash";
+      renderOverlay(0);
+      return false;
+    }
+    if (id > unlocked) {
+      // Never enter play for locked miles — stay on dashboard
+      mode = "dash";
+      app.dataset.mode = "dash";
+      biome = BIOMES.day;
+      stage.style.background = biome.bg;
+      sfx.tick();
+      renderOverlay(0);
+      return false;
+    }
+    try {
+      unlock();
+      gauntlet = false;
+      if (save.daily) reseedDaily();
+      level = L;
+      biome = BIOMES[L.biome] || BIOMES.day;
+      if (!biome || !biome.bg) biome = BIOMES.day;
+      selected = id;
+      save.selected = id;
+      persist();
+      resetSim();
+      mode = "play";
+      app.dataset.mode = "play";
+      stage.style.background = biome.bg || "#f7f7f7";
+      renderOverlay(0);
+      sfx.click();
+      return true;
+    } catch (err) {
+      console.error("[dino] startLevel failed", err);
+      mode = "dash";
+      app.dataset.mode = "dash";
+      level = null;
+      biome = BIOMES.day;
+      stage.style.background = biome.bg;
+      renderOverlay(0);
+      return false;
+    }
   }
 
   function enterDash() {
@@ -2536,22 +2569,27 @@ export function mountDinoLegend(root) {
       starSum += rec.stars || 0;
       scoreSum += rec.best || 0;
     }
-    const L = LEVELS[selected - 1];
-    const locked = L.id > save.unlocked;
+    const unlocked = Math.max(1, Number(save.unlocked) || 1);
+    if (!LEVELS[selected - 1]) selected = Math.min(LEVELS.length, unlocked);
+    const L = LEVELS[selected - 1] || LEVELS[0];
+    const locked = L.id > unlocked;
     const rec = save.levels[String(L.id)] || { best: 0, stars: 0 };
     const cards = LEVELS.map((lv) => {
       const r = save.levels[String(lv.id)] || { best: 0, stars: 0 };
-      const isLock = lv.id > save.unlocked;
-      const foe = lv.foes.map((f) => f[0]).slice(0, 3).join(" · ");
+      const isLock = lv.id > unlocked;
+      const foe = (lv.foes || []).map((f) => f[0]).slice(0, 3).join(" · ");
       return `<button type="button" class="card ${lv.id === selected ? "sel" : ""} ${isLock ? "lock" : ""}" data-act="select" data-id="${lv.id}">
         <span class="strip" data-biome="${lv.biome}"></span>
-        <span class="card-top"><span>${String(lv.id).padStart(2, "0")}</span><span>${lv.tag}${lv.boss ? " · Boss" : ""}</span></span>
+        <span class="card-top"><span>${String(lv.id).padStart(2, "0")}</span><span>${lv.tag}${lv.boss ? " · Boss" : ""}${isLock ? " · LOCK" : ""}</span></span>
         <span class="card-name">${lv.name}</span>
-        <span class="card-foes">${foe}</span>
+        <span class="card-foes">${isLock ? "Locked — clear mile " + Math.min(lv.id - 1, unlocked) + " first" : foe}</span>
         <span class="card-bot"><span>${starsHTML(r.stars || 0)}</span><span>${isLock ? "Locked" : "Best " + padScore(r.best || 0)}</span></span>
       </button>`;
     }).join("");
-    const foeItems = L.foes.map((f) => `<li><strong>${f[0]}</strong>${f[1]}</li>`).join("");
+    const foeItems = (L.foes || []).map((f) => `<li><strong>${f[0]}</strong>${f[1]}</li>`).join("");
+    const lockMsg = locked
+      ? `<p class="lock-msg">Locked. Clear <strong>Mile ${unlocked}</strong> to open this road. Preview only — use the button below to play your highest open mile.</p>`
+      : "";
     return `<div class="dash">
       <div class="top">
         <div class="brand">
@@ -2565,6 +2603,7 @@ export function mountDinoLegend(root) {
           <span class="pill">${starSum}/${LEVELS.length * 3} stars</span>
           <span class="pill">${cleared}/${LEVELS.length} clear</span>
           <span class="pill">Total ${padScore(scoreSum)}</span>
+          <span class="pill">Open to ${unlocked}</span>
         </div>
       </div>
       <div class="layout">
@@ -2575,10 +2614,11 @@ export function mountDinoLegend(root) {
           <p>${L.blurb}</p>
           <ul>${foeItems}</ul>
           <p>${starsHTML(rec.stars || 0)} &nbsp; Best ${padScore(rec.best || 0)} &nbsp; Par ${padScore(L.par)}</p>
+          ${lockMsg}
           <div class="actions">
             <button type="button" class="btn primary" data-act="play" ${locked ? "disabled" : ""}>${locked ? "Locked" : "Run level"}</button>
+            ${locked ? `<button type="button" class="btn" data-act="play-open">Play mile ${unlocked}</button>` : ""}
           </div>
-          ${locked ? `<p>Clear the previous mile to unlock this one. The roster above is what is waiting.</p>` : ""}
         </aside>
       </div>
       <p class="help">Jump / Duck / Fire (F). Stomp foes mid-air · Duck in air = dive-slam · Tap fire near a projectile to PARRY · Near-miss = GRAZE. Halfway: SUPER ×3 + IMTI (I). Style rank multiplies score. Stars: clear, beat par, ≥4 hearts.</p>
@@ -2609,12 +2649,16 @@ export function mountDinoLegend(root) {
     unlock();
     const act = btn.dataset.act;
     if (act === "select") {
-      selected = Number(btn.dataset.id);
+      selected = Number(btn.dataset.id) || 1;
       save.selected = selected;
       resetArmed = false;
       persist();
       sfx.click();
       renderOverlay(0);
+      return;
+    }
+    if (act === "play-open") {
+      startLevel(Math.max(1, Number(save.unlocked) || 1));
       return;
     }
     if (act === "play") startLevel(selected);
@@ -2671,7 +2715,7 @@ export function mountDinoLegend(root) {
     if (role === "jump") {
       keys.jump = true;
       if (mode === "play") requestJump();
-      else if (mode === "dash") startLevel(selected);
+      else if (mode === "dash") startLevel(Math.min(selected, Math.max(1, Number(save.unlocked) || 1)));
       else if (mode === "pause") togglePause();
       else if (mode === "over" && level) startLevel(level.id);
       else if (mode === "clear" && level) startLevel(Math.min(LEVELS.length, level.id + 1));
