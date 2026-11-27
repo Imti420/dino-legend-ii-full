@@ -153,28 +153,44 @@ export function stripInstallParams(url) {
 
 export function renderInstallPageHtml(template, { host, url } = {}) {
   return String(template)
-    .replaceAll("{{APP_NAME}}", escapeHtml(appNameFromHost(host)))
+    .replaceAll("{{APP_NAME}}", escapeHtml((() => {
+    try {
+      const sitePath = join(process.cwd(), OG_SITE_REL_PATH);
+      if (existsSync(sitePath)) {
+        const s = JSON.parse(readFileSync(sitePath, "utf8"));
+        if (s?.title) return String(s.title).trim();
+      }
+    } catch (_) {}
+    const h = appNameFromHost(host);
+    return h && h !== DEFAULT_APP_NAME ? h : DEFAULT_APP_NAME;
+  })()))
     .replaceAll("{{APP_URL}}", escapeHtml(stripInstallParams(url)));
 }
 
-export function renderWebManifest(hostHeader) {
-  const name = appNameFromHost(hostHeader);
+export function renderWebManifest(hostHeader, site = {}) {
+  // Prefer site.json title so Vercel hosts don't fall back to "Grok App"
+  const fromSite = String(site?.title ?? "").trim();
+  const fromHost = appNameFromHost(hostHeader);
+  const name =
+    fromSite ||
+    (fromHost && fromHost !== DEFAULT_APP_NAME ? fromHost : "") ||
+    DEFAULT_APP_NAME;
+  const short = name.length > 12 ? name.replace(/\s+II$/, "").slice(0, 12) : name;
   return JSON.stringify(
     {
       name,
-      short_name: name,
+      short_name: short || name,
       id: "/",
       start_url: "/",
       scope: "/",
       display: "standalone",
-      background_color: "#000000",
-      theme_color: "#000000",
+      background_color: "#0c0a12",
+      theme_color: "#e85d04",
+      description: "Run. Jump. Fire. Become a legend.",
       icons: [
-        {
-          src: "/__grok/icon-180.png",
-          sizes: "180x180",
-          type: "image/png",
-        },
+        { src: "/__grok/icon-180.png", sizes: "180x180", type: "image/png", purpose: "any" },
+        { src: "/__grok/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+        { src: "/__grok/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
       ],
     },
     null,

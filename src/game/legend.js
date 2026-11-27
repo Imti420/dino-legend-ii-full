@@ -1057,7 +1057,7 @@ export function mountDinoLegend(root) {
       audio.music.connect(audio.master);
       audio.master.connect(audio.ctx.destination);
       audio.sfx.gain.value = 0.85;
-      audio.music.gain.value = 0.22;
+      audio.music.gain.value = 0.38;
       const len = Math.floor(audio.ctx.sampleRate * 0.4);
       const buf = audio.ctx.createBuffer(1, len, audio.ctx.sampleRate);
       const data = buf.getChannelData(0);
@@ -1089,6 +1089,89 @@ export function mountDinoLegend(root) {
     g.connect(audio.sfx);
     o.start(now);
     o.stop(now + dur + 0.02);
+  }
+
+  // Rock/metal music voices → music bus (distorted stack + kick/snare)
+  function musicTone(freq, dur, type, gain, slide, dest) {
+    if (!audio.ctx || !save.sound || !audio.music) return;
+    const now = audio.ctx.currentTime;
+    const o = audio.ctx.createOscillator();
+    const g = audio.ctx.createGain();
+    const shaper = audio.ctx.createWaveShaper();
+    // Soft clip for grit
+    const curve = new Float32Array(256);
+    for (let i = 0; i < 256; i++) {
+      const x = (i / 128) - 1;
+      curve[i] = Math.tanh(x * 2.8);
+    }
+    shaper.curve = curve;
+    o.type = type || "sawtooth";
+    o.frequency.setValueAtTime(Math.max(35, freq), now);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(35, slide), now + dur);
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain), now + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    o.connect(shaper);
+    shaper.connect(g);
+    g.connect(dest || audio.music);
+    o.start(now);
+    o.stop(now + dur + 0.03);
+  }
+
+  function musicKick() {
+    if (!audio.ctx || !save.sound) return;
+    musicTone(140, 0.14, "sine", 0.22, 42);
+    musicTone(70, 0.12, "triangle", 0.12, 35);
+  }
+
+  function musicSnare() {
+    if (!audio.ctx || !audio.noise || !save.sound) return;
+    const now = audio.ctx.currentTime;
+    const src = audio.ctx.createBufferSource();
+    src.buffer = audio.noise;
+    src.playbackRate.value = 2.4;
+    const g = audio.ctx.createGain();
+    const f = audio.ctx.createBiquadFilter();
+    f.type = "bandpass";
+    f.frequency.value = 1800;
+    f.Q.value = 0.7;
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.16, now + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+    src.connect(f);
+    f.connect(g);
+    g.connect(audio.music);
+    src.start(now);
+    src.stop(now + 0.14);
+    musicTone(220, 0.06, "triangle", 0.04, 90);
+  }
+
+  function musicHat() {
+    if (!audio.ctx || !audio.noise || !save.sound) return;
+    const now = audio.ctx.currentTime;
+    const src = audio.ctx.createBufferSource();
+    src.buffer = audio.noise;
+    src.playbackRate.value = 4.5;
+    const g = audio.ctx.createGain();
+    const f = audio.ctx.createBiquadFilter();
+    f.type = "highpass";
+    f.frequency.value = 6000;
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.045, now + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
+    src.connect(f);
+    f.connect(g);
+    g.connect(audio.music);
+    src.start(now);
+    src.stop(now + 0.05);
+  }
+
+  // Power chord: root + fifth + octave, saw stack
+  function musicChord(root, dur, gain) {
+    const g = gain || 0.05;
+    musicTone(root, dur, "sawtooth", g, null);
+    musicTone(root * 1.5, dur, "sawtooth", g * 0.7, null);
+    musicTone(root * 2, dur, "square", g * 0.35, null);
   }
 
   function noise(dur, gain, rate) {
@@ -2606,30 +2689,105 @@ export function mountDinoLegend(root) {
 
   function updateMusic(dt) {
     if (!audio.ctx || !save.sound || mode === "pause") return;
+    if (mode !== "play" && mode !== "dash") return;
     musicT -= dt;
     if (musicT > 0) return;
-    musicT = phase === "boss" ? 0.2 : 0.3;
-    const scales = {
-      day: [262, 311, 349, 392, 466],
-      dusk: [220, 262, 311, 349, 415],
-      ash: [196, 233, 262, 311, 370],
-      ice: [294, 349, 392, 466, 523],
-      jungle: [247, 294, 330, 392, 440],
-      night: [174, 220, 262, 311, 349],
-      rift: [185, 220, 277, 330, 415],
-      storm: [196, 233, 294, 349, 466],
-      crystal: [311, 370, 415, 494, 622],
-      foundry: [165, 196, 247, 294, 370],
-      marsh: [208, 247, 311, 370, 440],
-      omega: [155, 185, 233, 277, 349],
+
+    // Per-biome rock / metal profiles (BPM, root Hz, feel)
+    // Feel: classic | thrash | doom | groove | industrial | epic
+    const TRACKS = {
+      day:      { bpm: 138, root: 82.41, feel: "classic" },     // E2 — open-road hard rock
+      dusk:     { bpm: 126, root: 73.42, feel: "groove" },      // D2 — desert stoner
+      ash:      { bpm: 172, root: 77.78, feel: "thrash" },      // Eb — fire thrash
+      ice:      { bpm: 148, root: 92.50, feel: "classic" },     // F# — cold metal
+      jungle:   { bpm: 132, root: 87.31, feel: "groove" },      // F — tribal groove metal
+      night:    { bpm: 118, root: 65.41, feel: "doom" },        // C — night doom
+      rift:     { bpm: 158, root: 82.41, feel: "thrash" },
+      storm:    { bpm: 166, root: 87.31, feel: "thrash" },
+      crystal:  { bpm: 142, root: 110.00, feel: "classic" },
+      foundry:  { bpm: 150, root: 73.42, feel: "industrial" },
+      marsh:    { bpm: 120, root: 69.30, feel: "doom" },
+      omega:    { bpm: 100, root: 55.00, feel: "doom" },
+      neon:     { bpm: 160, root: 98.00, feel: "industrial" },
+      tomb:     { bpm: 112, root: 61.74, feel: "doom" },
+      sky:      { bpm: 144, root: 92.50, feel: "classic" },
+      trench:   { bpm: 168, root: 77.78, feel: "thrash" },
+      genesis:  { bpm: 136, root: 82.41, feel: "epic" },
+      bone:     { bpm: 128, root: 65.41, feel: "doom" },
+      prism:    { bpm: 152, root: 103.83, feel: "classic" },
+      thunder:  { bpm: 170, root: 87.31, feel: "thrash" },
+      citadel:  { bpm: 140, root: 73.42, feel: "industrial" },
+      void:     { bpm: 96,  root: 49.00, feel: "doom" },
     };
-    const key = mode === "dash" || !level ? "day" : level.biome;
-    const scale = scales[key] || scales.day;
-    const pat = [0, 2, 4, 2, 1, 3, 4, 1];
-    const idx = pat[musicStep % pat.length];
+
+    let key = "day";
+    if (mode === "play" && level) {
+      const b = BIOMES[level.biome] || {};
+      key = b.act3 || b.act4 || level.biome || "day";
+    }
+    const tr = TRACKS[key] || TRACKS.day;
+    let bpm = tr.bpm;
+    if (phase === "boss") bpm = Math.round(bpm * 1.12);
+    const beat = 60 / bpm;
+    musicT = beat / 2; // 8th notes
+
+    const step = musicStep % 16;
     musicStep += 1;
-    if (musicStep % 8 === 0) tone(scale[0] / 2, 0.18, "square", 0.018);
-    else if (musicStep % 4 !== 3) tone(scale[idx], 0.12, "square", 0.016);
+    const root = tr.root;
+    // Minor-ish degrees relative to root
+    const deg = [1, 1, 1.2, 1.5, 1, 0.75, 1.5, 2, 1, 1.2, 1.5, 1.8, 1, 0.75, 1.5, 2];
+    const riff = deg[step] * root;
+
+    // Drums
+    if (tr.feel === "thrash") {
+      if (step % 2 === 0) musicKick();
+      if (step % 4 === 2) musicSnare();
+      if (step % 2 === 1) musicHat();
+    } else if (tr.feel === "doom") {
+      if (step % 4 === 0) musicKick();
+      if (step % 8 === 4) musicSnare();
+      if (step % 4 === 2) musicHat();
+    } else if (tr.feel === "industrial") {
+      if (step % 2 === 0) musicKick();
+      if (step % 4 === 1 || step % 4 === 3) musicHat();
+      if (step % 8 === 4) musicSnare();
+    } else if (tr.feel === "groove") {
+      if (step === 0 || step === 3 || step === 6 || step === 10) musicKick();
+      if (step === 4 || step === 12) musicSnare();
+      if (step % 2 === 1) musicHat();
+    } else if (tr.feel === "epic") {
+      if (step % 4 === 0) musicKick();
+      if (step % 4 === 2) musicSnare();
+      if (step % 2 === 1) musicHat();
+    } else { // classic hard rock
+      if (step % 4 === 0 || step % 8 === 6) musicKick();
+      if (step % 4 === 2) musicSnare();
+      if (step % 2 === 1) musicHat();
+    }
+
+    // Guitars / bass
+    const chDur = beat * 0.9;
+    if (tr.feel === "doom") {
+      if (step % 4 === 0) musicChord(root * (step % 8 === 0 ? 1 : 0.75), beat * 1.6, 0.07);
+    } else if (tr.feel === "thrash") {
+      if (step % 2 === 0) musicChord(riff, beat * 0.4, 0.055);
+      if (step % 4 === 1) musicTone(riff * 2, beat * 0.25, "square", 0.03);
+    } else if (tr.feel === "industrial") {
+      if (step % 4 === 0) musicChord(root, beat * 0.7, 0.05);
+      if (step % 4 === 2) musicTone(root * 1.5, beat * 0.35, "square", 0.04, root * 0.8);
+    } else if (tr.feel === "epic") {
+      if (step % 4 === 0) musicChord(root * (step < 8 ? 1 : 1.2), beat * 1.2, 0.06);
+      if (step === 7 || step === 15) musicTone(root * 3, beat * 0.5, "sawtooth", 0.04, root * 4);
+    } else {
+      // classic / groove
+      if (step % 4 === 0) musicChord(riff, chDur, 0.055);
+      else if (step % 4 === 2) musicTone(riff * 2, beat * 0.35, "sawtooth", 0.035);
+    }
+
+    // Boss: extra low octave stomp + faster lead
+    if (phase === "boss" && step % 4 === 0) {
+      musicTone(root * 0.5, beat * 0.8, "sine", 0.1, root * 0.35);
+    }
   }
 
   function calcStars() {
