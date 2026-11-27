@@ -187,7 +187,7 @@ const layer = (s, sp, period, fn) => { const off = s * sp, k = Math.floor(off / 
 
 function neon(c, t, s) {
   c.fillStyle = lin(c, 0, 0, 0, G, ["#07021a", "#2a0a52", "#c0207a", "#ff7a3a"]); c.fillRect(0, 0, W, H);
-  for (let i = 0; i < 40; i++) { c.fillStyle = `rgba(255,255,255,${.3 + .5 * hs(i + Math.floor(t * 2 + i))})`; c.fillRect(hs(i) * W, hs(i + 9) * 150, 1, 1); }
+  for (let i = 0; i < 14; i++) { c.fillStyle = `rgba(255,255,255,${.3 + .5 * hs(i + Math.floor(t * 2 + i))})`; c.fillRect(hs(i) * W, hs(i + 9) * 150, 1, 1); }
   const sx = W * .5, sy = G - 74; glow(c, sx, sy, 150, "255,60,160", .45);
   c.save(); c.beginPath(); c.arc(sx, sy, 62, 0, 7); c.clip(); c.fillStyle = lin(c, 0, sy - 62, 0, sy + 62, ["#fff06a", "#ff8a3a", "#ff2a9a"]); c.fillRect(sx - 62, sy - 62, 124, 124);
   for (let i = 0; i < 7; i++) { c.fillStyle = "#3a0a56"; c.fillRect(sx - 62, sy + 4 + i * 8, 124, 1 + i * .8); } c.restore();
@@ -254,11 +254,11 @@ export const ACT3_BIOMES = {
 const WORLD = { neon, tomb, sky: skyW, trench, genesis };
 export function drawAct3World(c, key, t, scroll) { WORLD[key](c, t, scroll); }
 export function drawAct3Fore(c, key, t, scroll) {
-  if (key === "neon") { c.strokeStyle = "rgba(150,230,255,.5)"; c.lineWidth = 1; for (let i = 0; i < 70; i++) { const x = (i * 47 - t * 160) % (W + 40), y = (i * 83 + t * 620) % H; c.beginPath(); c.moveTo((x + W + 40) % (W + 40), y); c.lineTo((x + W + 40) % (W + 40) - 4, y + 12); c.stroke(); } }
-  if (key === "tomb") for (let i = 0; i < 34; i++) { c.fillStyle = `rgba(255,230,170,${.15 + .3 * hs(i)})`; c.fillRect(((hs(i) * W - scroll * .6 - t * 20) % W + W) % W, (hs(i + 3) * H + t * 8 * hs(i)) % H, 2, 2); }
+  if (key === "neon") { c.strokeStyle = "rgba(150,230,255,.5)"; c.lineWidth = 1; for (let i = 0; i < 22; i++) { const x = (i * 47 - t * 160) % (W + 40), y = (i * 83 + t * 620) % H; c.beginPath(); c.moveTo((x + W + 40) % (W + 40), y); c.lineTo((x + W + 40) % (W + 40) - 4, y + 12); c.stroke(); } }
+  if (key === "tomb") for (let i = 0; i < 12; i++) { c.fillStyle = `rgba(255,230,170,${.15 + .3 * hs(i)})`; c.fillRect(((hs(i) * W - scroll * .6 - t * 20) % W + W) % W, (hs(i + 3) * H + t * 8 * hs(i)) % H, 2, 2); }
   if (key === "sky") { c.strokeStyle = "rgba(255,255,255,.55)"; for (let i = 0; i < 16; i++) { const y = hs(i) * G, x = ((hs(i + 9) * W - scroll * 1.8) % (W + 100) + W + 100) % (W + 100) - 50; c.beginPath(); c.moveTo(x, y); c.lineTo(x + 40 + hs(i) * 30, y); c.stroke(); } }
-  if (key === "trench") for (let i = 0; i < 60; i++) { const x = (hs(i) * W - scroll * .2 + Math.sin(t + i) * 8 + W) % W, y = H - ((hs(i + 4) * H + t * (10 + hs(i + 2) * 30)) % H); c.fillStyle = i % 5 ? "rgba(200,240,255,.45)" : "rgba(160,220,255,.7)"; if (i % 5) c.fillRect(x, y, 1.5, 1.5); else { c.strokeStyle = "rgba(180,230,255,.7)"; c.beginPath(); c.arc(x, y, 2 + hs(i) * 2, 0, 7); c.stroke(); } }
-  if (key === "genesis") for (let i = 0; i < 60; i++) { const x = ((hs(i) * W - scroll * .5) % W + W) % W, y = H - ((hs(i + 5) * H + t * (30 + hs(i + 2) * 80)) % H); c.fillStyle = i % 3 ? "#ff8a20" : "#ffd070"; c.fillRect(x, y, 2, 2); }
+  if (key === "trench") for (let i = 0; i < 18; i++) { const x = (hs(i) * W - scroll * .2 + Math.sin(t + i) * 8 + W) % W, y = H - ((hs(i + 4) * H + t * (10 + hs(i + 2) * 30)) % H); c.fillStyle = i % 5 ? "rgba(200,240,255,.45)" : "rgba(160,220,255,.7)"; if (i % 5) c.fillRect(x, y, 1.5, 1.5); else { c.strokeStyle = "rgba(180,230,255,.7)"; c.beginPath(); c.arc(x, y, 2 + hs(i) * 2, 0, 7); c.stroke(); } }
+  if (key === "genesis") for (let i = 0; i < 18; i++) { const x = ((hs(i) * W - scroll * .5) % W + W) % W, y = H - ((hs(i + 5) * H + t * (30 + hs(i + 2) * 80)) % H); c.fillStyle = i % 3 ? "#ff8a20" : "#ffd070"; c.fillRect(x, y, 2, 2); }
 }
 
 /* ================= BOSSES =================
@@ -322,7 +322,7 @@ export function drawLeviathan(c, b, t) {
 // L17 — EXTINCTION (200x200): the comet that ended the dinosaurs. P1 sealed rock face, P2 shell cracks open, P3 white-hot core.
 export function drawExtinction(c, b, t) {
   const p = b.phase || 1, cx = 100, cy = 100, R = 76, charge = b.tell === "slam" || b.tell === "nova";
-  for (let i = 0; i < 34; i++) { const a = -.5 + hs(i) * 1.2, len = 80 + hs(i + 9) * 90 + Math.sin(t * 9 + i) * 14, w = 10 + hs(i + 4) * 14, bx = cx + 40, by = cy + (hs(i + 2) - .5) * 100; poly(c, [[bx, by - w], [bx + len * Math.cos(a * .3), by + len * Math.sin(a) * .4 - w * .4], [bx, by + w]], i % 3 ? "rgba(255,110,30,.75)" : "rgba(255,200,80,.8)"); }
+  for (let i = 0; i < 12; i++) { const a = -.5 + hs(i) * 1.2, len = 80 + hs(i + 9) * 90 + Math.sin(t * 9 + i) * 14, w = 10 + hs(i + 4) * 14, bx = cx + 40, by = cy + (hs(i + 2) - .5) * 100; poly(c, [[bx, by - w], [bx + len * Math.cos(a * .3), by + len * Math.sin(a) * .4 - w * .4], [bx, by + w]], i % 3 ? "rgba(255,110,30,.75)" : "rgba(255,200,80,.8)"); }
   glow(c, cx, cy, 150, p >= 3 ? "255,240,200" : "255,120,40", .5 + (charge ? .4 * Math.sin(t * 24) : 0));
   const chunk = (a0, a1, off) => { c.save(); c.translate(Math.cos((a0 + a1) / 2) * off, Math.sin((a0 + a1) / 2) * off); c.beginPath(); c.moveTo(cx, cy); c.arc(cx, cy, R, a0, a1); c.closePath(); c.fillStyle = lin(c, cx - R, cy - R, cx + R, cy + R, ["#6a3a30", "#3a1a14", "#1a0a08"]); c.fill(); c.strokeStyle = "#ff7a1a"; c.lineWidth = 2; c.stroke(); c.restore(); };
   if (p >= 2) { glow(c, cx, cy, 90, "255,180,60", 1); circ(c, cx, cy, 56, p >= 3 ? "#fff6d0" : "#ff6a1a"); circ(c, cx, cy, 40, p >= 3 ? "#ffffff" : "#ffd070"); }

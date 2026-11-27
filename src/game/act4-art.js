@@ -130,7 +130,7 @@ const gear = (c, x, y, r, n, rot, fill, hole) => {
 // L18 — OSSUARY FIELDS: green-teal graveyard under a pale moon, giant ribcages, drifting mist.
 function bone(c, t, s) {
   c.fillStyle = lin(c, 0, 0, 0, G, ["#08141a", "#18363a", "#4a7a68", "#c8d8a8"]); c.fillRect(0, 0, W, H);
-  for (let i = 0; i < 40; i++) { c.fillStyle = `rgba(230,255,240,${.2 + .5 * hs(i + Math.floor(t + i))})`; c.fillRect(hs(i) * W, hs(i + 9) * 150, 1, 1); }
+  for (let i = 0; i < 14; i++) { c.fillStyle = `rgba(230,255,240,${.2 + .5 * hs(i + Math.floor(t + i))})`; c.fillRect(hs(i) * W, hs(i + 9) * 150, 1, 1); }
   glow(c, 470, 86, 200, "200,255,220", .5); circ(c, 470, 86, 40, "#f0f8dc"); circ(c, 458, 78, 7, "#d4e2b8"); circ(c, 484, 98, 5, "#d4e2b8");
   layer(s, .05, 460, (x0, k) => { const x = x0 + 120 + hs(k) * 80, h = 110 + hs(k + 2) * 60; c.strokeStyle = "#06100f"; c.lineWidth = 7; c.beginPath(); c.moveTo(x, G); c.lineTo(x + 4, G - h); c.stroke(); c.lineWidth = 3; for (let i = 0; i < 4; i++) { c.beginPath(); c.moveTo(x + 3, G - h * (.4 + i * .15)); c.lineTo(x + (i % 2 ? 1 : -1) * (30 + i * 8), G - h * (.55 + i * .15)); c.stroke(); } });
   layer(s, .2, 560, (x0, k) => { if (hs(k + 7) < .4) return; c.strokeStyle = "#8a9a84"; c.lineWidth = 6; for (let i = 0; i < 6; i++) { c.beginPath(); c.ellipse(x0 + 60 + i * 26, G, 13, 70 + Math.sin(i * .55) * 24, 0, Math.PI, Math.PI * 2); c.stroke(); } c.fillStyle = "#6a7a66"; c.fillRect(x0 + 40, G - 8, 150, 8); });
@@ -158,7 +158,7 @@ function storm(c, t, s) {
   layer(s, .1, 500, (x0, k) => { c.fillStyle = "#162030"; c.beginPath(); c.moveTo(x0, G); c.quadraticCurveTo(x0 + 130, G - 90 - hs(k) * 40, x0 + 280, G); c.fill(); });
   layer(s, .25, 340, (x0, k) => { const x = x0 + 150; c.strokeStyle = "#0a121c"; c.lineWidth = 3; c.beginPath(); c.moveTo(x - 14, G); c.lineTo(x, G - 130); c.lineTo(x + 14, G); c.moveTo(x - 9, G - 60); c.lineTo(x + 9, G - 60); c.moveTo(x - 20, G - 110); c.lineTo(x + 20, G - 110); c.stroke(); if (hs(Math.floor(t * 3) + k) > .6) glow(c, x, G - 132, 26, "255,240,120", .7); });
   c.fillStyle = "#1c2c22"; c.fillRect(0, G, W, H - G); c.fillStyle = "#3a5a38"; c.fillRect(0, G, W, 3);
-  c.strokeStyle = "#4a7a48"; c.lineWidth = 2; for (let i = 0; i < 40; i++) { const x = ((i * 19 - s * 1.1) % 780 + 780) % 780 - 20, h = 6 + hs(i) * 10, lean = Math.sin(t * 3 + i) * 3 - 4; c.beginPath(); c.moveTo(x, G + 3); c.lineTo(x + lean, G + 3 - h); c.stroke(); }
+  c.strokeStyle = "#4a7a48"; c.lineWidth = 2; for (let i = 0; i < 14; i++) { const x = ((i * 19 - s * 1.1) % 780 + 780) % 780 - 20, h = 6 + hs(i) * 10, lean = Math.sin(t * 3 + i) * 3 - 4; c.beginPath(); c.moveTo(x, G + 3); c.lineTo(x + lean, G + 3 - h); c.stroke(); }
   c.fillStyle = "#101a14"; for (let i = 0; i < 8; i++) c.fillRect(((i * 90 - s) % 720 + 720) % 720 - 20, G + 24 + (i % 3) * 8, 40, 2);
   if (fl) { c.fillStyle = "rgba(255,255,255,.22)"; c.fillRect(0, 0, W, H); }
 }
@@ -175,7 +175,7 @@ function citadel(c, t, s) {
 // L22 — THE AFTERLIGHT: starfield void, ringed black moon, aurora ribbons, glass floor. Final level.
 function voidW(c, t, s) {
   c.fillStyle = lin(c, 0, 0, 0, G, ["#010006", "#0a0420", "#220a4a", "#5a1a8a"]); c.fillRect(0, 0, W, H);
-  for (let i = 0; i < 90; i++) { c.fillStyle = `rgba(255,255,255,${.25 + .6 * hs(i + Math.floor(t * 1.5 + i))})`; c.fillRect(((hs(i) * W - s * .02 * (1 + hs(i + 3))) % W + W) % W, hs(i + 9) * G, 1 + (i % 9 === 0), 1 + (i % 9 === 0)); }
+  for (let i = 0; i < 24; i++) { c.fillStyle = `rgba(255,255,255,${.25 + .6 * hs(i + Math.floor(t * 1.5 + i))})`; c.fillRect(((hs(i) * W - s * .02 * (1 + hs(i + 3))) % W + W) % W, hs(i + 9) * G, 1 + (i % 9 === 0), 1 + (i % 9 === 0)); }
   for (let k = 0; k < 3; k++) { c.strokeStyle = `rgba(${["90,255,200", "200,120,255", "110,180,255"][k]},.16)`; c.lineWidth = 16; c.beginPath(); for (let x = 0; x <= W; x += 20) { const y = 70 + k * 36 + Math.sin(x * .012 + t * .5 + k * 2) * 24; x ? c.lineTo(x, y) : c.moveTo(x, y); } c.stroke(); }
   const mx = 430, my = 120; glow(c, mx, my, 150, "170,100,255", .4); circ(c, mx, my, 54, "#05020e"); c.strokeStyle = "rgba(220,170,255,.7)"; c.lineWidth = 3; c.beginPath(); c.ellipse(mx, my, 104, 18, -.3, 0, 7); c.stroke(); c.strokeStyle = "rgba(255,255,255,.9)"; c.lineWidth = 2; c.beginPath(); c.arc(mx, my, 54, Math.PI * 1.1, Math.PI * 1.7); c.stroke();
   layer(s, .08, 480, (x0, k) => { const x = x0 + 140, y = 190 + hs(k) * 60 + Math.sin(t * .6 + k) * 6; poly(c, [[x, y], [x + 90, y], [x + 70, y + 26], [x + 44, y + 54], [x + 20, y + 26]], "#120a2a"); c.fillStyle = "#7a5ad0"; c.fillRect(x, y, 90, 2); });
@@ -194,10 +194,10 @@ const WORLD4 = { bone, crystal, storm, citadel, void: voidW };
 export function drawAct4World(c, key, t, scroll) { WORLD4[key](c, t, scroll); }
 export function drawAct4Fore(c, key, t, scroll) {
   if (key === "bone") for (let i = 0; i < 5; i++) { const y = G - 20 + i * 8, x = ((i * 190 - scroll * .7 - t * 14) % (W + 200) + W + 200) % (W + 200) - 100; c.fillStyle = "rgba(160,255,210,.07)"; c.beginPath(); c.ellipse(x, y, 130, 14, 0, 0, 7); c.fill(); }
-  if (key === "crystal") for (let i = 0; i < 26; i++) { const tw = Math.sin(t * 3 + i * 2); if (tw < .3) continue; const x = ((hs(i) * W - scroll * .4) % W + W) % W, y = hs(i + 5) * H; c.fillStyle = i % 2 ? "rgba(255,160,240,.8)" : "rgba(160,240,255,.8)"; c.fillRect(x - 3, y, 7, 1); c.fillRect(x, y - 3, 1, 7); }
-  if (key === "storm") { c.strokeStyle = "rgba(180,200,230,.5)"; c.lineWidth = 1; for (let i = 0; i < 90; i++) { const x = ((i * 53 - t * 220) % (W + 60) + W + 60) % (W + 60), y = (i * 79 + t * 700) % H; c.beginPath(); c.moveTo(x, y); c.lineTo(x - 8, y + 16); c.stroke(); } }
-  if (key === "citadel") for (let i = 0; i < 30; i++) { const x = ((hs(i) * W - scroll * .6) % W + W) % W, y = H - ((hs(i + 4) * H + t * (40 + hs(i) * 70)) % H); c.fillStyle = i % 3 ? "rgba(255,200,110,.8)" : "rgba(255,255,255,.12)"; c.fillRect(x, y, i % 3 ? 2 : 6, i % 3 ? 2 : 6); }
-  if (key === "void") for (let i = 0; i < 40; i++) { const x = ((hs(i) * W - scroll * .5 - t * 10) % W + W) % W, y = (hs(i + 3) * H - t * (6 + hs(i) * 14) + H * 4) % H; c.fillStyle = `rgba(220,180,255,${.2 + .4 * hs(i + 7)})`; c.fillRect(x, y, 2, 2); }
+  if (key === "crystal") for (let i = 0; i < 10; i++) { const tw = Math.sin(t * 3 + i * 2); if (tw < .3) continue; const x = ((hs(i) * W - scroll * .4) % W + W) % W, y = hs(i + 5) * H; c.fillStyle = i % 2 ? "rgba(255,160,240,.8)" : "rgba(160,240,255,.8)"; c.fillRect(x - 3, y, 7, 1); c.fillRect(x, y - 3, 1, 7); }
+  if (key === "storm") { c.strokeStyle = "rgba(180,200,230,.5)"; c.lineWidth = 1; for (let i = 0; i < 24; i++) { const x = ((i * 53 - t * 220) % (W + 60) + W + 60) % (W + 60), y = (i * 79 + t * 700) % H; c.beginPath(); c.moveTo(x, y); c.lineTo(x - 8, y + 16); c.stroke(); } }
+  if (key === "citadel") for (let i = 0; i < 12; i++) { const x = ((hs(i) * W - scroll * .6) % W + W) % W, y = H - ((hs(i + 4) * H + t * (40 + hs(i) * 70)) % H); c.fillStyle = i % 3 ? "rgba(255,200,110,.8)" : "rgba(255,255,255,.12)"; c.fillRect(x, y, i % 3 ? 2 : 6, i % 3 ? 2 : 6); }
+  if (key === "void") for (let i = 0; i < 14; i++) { const x = ((hs(i) * W - scroll * .5 - t * 10) % W + W) % W, y = (hs(i + 3) * H - t * (6 + hs(i) * 14) + H * 4) % H; c.fillStyle = `rgba(220,180,255,${.2 + .4 * hs(i + 7)})`; c.fillRect(x, y, 2, 2); }
 }
 
 /* ================= BOSSES (facing LEFT, local box 0..w, 0..h; same engine fields as act3) ================= */

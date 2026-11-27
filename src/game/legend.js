@@ -1112,7 +1112,7 @@ export function mountDinoLegend(root) {
         });
       }
     }
-    if (particles.length > 280) particles.splice(0, particles.length - 280);
+    if (particles.length > 110) particles.splice(0, particles.length - 110);
   }
 
   function popText(x, y, str) {
@@ -2523,6 +2523,7 @@ export function mountDinoLegend(root) {
   }
 
   function resetSim() {
+    try { actCache.key = ""; actCache.q = -1e9; } catch (_) {}
     entities = [];
     particles = [];
     floaters = [];
@@ -2953,14 +2954,43 @@ export function mountDinoLegend(root) {
     if (document.visibilityState === "visible" && audio.ctx && audio.ctx.state === "suspended") audio.ctx.resume();
   }, sig);
 
+  // Cached Act III/IV backdrops (heavy procedural art) — redraw every ~12px of scroll
+  let actCache = { key: "", q: -1e9, cv: null, g: null };
+  function drawActBackdropCached() {
+    const key = (biome && (biome.act3 || biome.act4)) || "";
+    if (!key) return false;
+    if (!actCache.cv) {
+      actCache.cv = document.createElement("canvas");
+      actCache.cv.width = W;
+      actCache.cv.height = H;
+      actCache.g = actCache.cv.getContext("2d");
+    }
+    const step = 14;
+    const q = Math.floor(scroll / step) * step;
+    // also refresh ~8x/sec so animated bits (gears, neon pulse) still move a little
+    const tick = Math.floor(t * 8);
+    if (actCache.key !== key + ":" + tick || actCache.q !== q) {
+      const g = actCache.g;
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, W, H);
+      try {
+        if (biome.act3) drawAct3World(g, biome.act3, t, q);
+        else drawAct4World(g, biome.act4, t, q);
+      } catch (err) { console.warn(err); }
+      actCache.key = key + ":" + tick;
+      actCache.q = q;
+    }
+    ctx.drawImage(actCache.cv, 0, 0);
+    try {
+      if (biome.act3) drawAct3Fore(ctx, biome.act3, t, scroll);
+      else drawAct4Fore(ctx, biome.act4, t, scroll);
+    } catch (_) {}
+    return true;
+  }
+
   function drawWorld() {
     // Act III / IV full-scene biomes (background only — entities/player still draw below)
-    let actBg = false;
-    if (biome && biome.act3) {
-      try { drawAct3World(ctx, biome.act3, t, scroll); drawAct3Fore(ctx, biome.act3, t, scroll); actBg = true; } catch (err) { console.warn(err); }
-    } else if (biome && biome.act4) {
-      try { drawAct4World(ctx, biome.act4, t, scroll); drawAct4Fore(ctx, biome.act4, t, scroll); actBg = true; } catch (err) { console.warn(err); }
-    }
+    const actBg = drawActBackdropCached();
     if (!actBg) {
     // Gradient sky (trailer energy)
     const sky = ctx.createLinearGradient(0, 0, 0, GROUND);
@@ -3054,14 +3084,14 @@ export function mountDinoLegend(root) {
     // Biome particles
     if (biome.snow) {
       ctx.fillStyle = "#ffffff";
-      for (let i = 0; i < 36; i++) {
+      for (let i = 0; i < 16; i++) {
         const x = ((i * 53 + t * 28) % (W + 12));
         const y = ((i * 37 + t * 55) % (GROUND - 20));
         ctx.fillRect(x, y, 2 + (i % 2), 2 + (i % 2));
       }
     }
     if (biome.ember) {
-      for (let i = 0; i < 28; i++) {
+      for (let i = 0; i < 14; i++) {
         const x = ((i * 67 - t * 32 + scroll * 0.15) % (W + 16) + W + 16) % (W + 16);
         const y = GROUND - 16 - ((i * 41 + t * 48) % 160);
         ctx.fillStyle = i % 2 ? "#ff8a20" : "#ffd070";
@@ -3088,7 +3118,7 @@ export function mountDinoLegend(root) {
 
     // ambient weather / biome accents
     if (biome.rain) {
-      for (let i = 0; i < 70; i++) {
+      for (let i = 0; i < 14; i++) {
         const x = (i * 47 + t * 420) % W;
         const y = (i * 83 + t * 620) % H;
         ctx.fillStyle = "rgba(180,200,255,0.55)";
@@ -3929,16 +3959,17 @@ export function mountDinoLegend(root) {
     if (!last) last = ts;
     let dt = (ts - last) / 1000;
     last = ts;
-    if (dt > 0.05) dt = 0.05;
+    if (dt > 0.033) dt = 0.033; // hard cap ~30fps sim when tab hitching
     acc += dt;
     let steps = 0;
-    while (acc >= 1 / 60 && steps < 5) {
+    // Max 2 physics steps per frame to avoid spiral of death on slow devices
+    while (acc >= 1 / 60 && steps < 2) {
       update(1 / 60);
       acc -= 1 / 60;
       steps += 1;
     }
-    if (steps === 5) acc = 0;
-    if (!player.dead) player.anim += dt * (speed / 220);
+    if (steps === 2) acc = 0;
+    if (!player.dead && mode === "play") player.anim += dt * (speed / 220);
     render();
     raf = requestAnimationFrame(loop);
   }
