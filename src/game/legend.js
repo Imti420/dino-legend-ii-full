@@ -1,5 +1,10 @@
 // @ts-nocheck
 /* Dino Legend — client-side canvas expedition built on the Chrome runner sprites. */
+/* Legend III modules */
+
+import { drawSprite, stepChunks, drawChunks, shatter } from "./art.js";
+import { ENEMIES, materialDeath } from "./enemies.js";
+import { createStyle } from "./style.js";
 
 const W = 640;
 const H = 360;
@@ -902,6 +907,12 @@ export function mountDinoLegend(root) {
   let imtiReady = false;
   let imtiUsed = false;
   let imtiFx = 0;
+  let airChain = 0;
+  let diveSlam = false;
+  let parryWindow = 0;
+  let style = createStyle();
+  let chunks = [];
+  let camZoom = 1;
   let phase = "run";
   let intro = 0;
   let spawnCd = 1;
@@ -1929,8 +1940,8 @@ export function mountDinoLegend(root) {
 
   function update(dt) {
     t += dt;
-    style.update(dt);
-    stepChunks(chunks, dt, GROUND);
+    try { style.update(dt); } catch (_) {}
+    try { stepChunks(chunks, dt, GROUND); } catch (_) {}
     parryWindow = Math.max(0, parryWindow - dt);
     camZoom += (1 - camZoom) * Math.min(1, dt * 8);
     trauma = Math.max(0, trauma - dt * 1.35);
@@ -2129,9 +2140,11 @@ export function mountDinoLegend(root) {
         }
       }
       updateEntExtra(e, dt);
-      if (ENEMIES[e.kind] && ENEMIES[e.kind].ai) {
-        ENEMIES[e.kind].ai(e, dt, enemyApi());
-      }
+      try {
+        if (ENEMIES && ENEMIES[e.kind] && ENEMIES[e.kind].ai) {
+          ENEMIES[e.kind].ai(e, dt, enemyApi());
+        }
+      } catch (_) {}
       if (e.kind === "meteor" && e.y + e.h >= GROUND - 2) {
         e.alive = false;
         let cx = e.x;
@@ -2368,6 +2381,12 @@ export function mountDinoLegend(root) {
     imtiReady = false;
     imtiUsed = false;
     imtiFx = 0;
+    airChain = 0;
+    diveSlam = false;
+    parryWindow = 0;
+    style.reset();
+    chunks = [];
+    camZoom = 1;
     score = 0;
     dist = 0;
     combo = 0;
@@ -2924,7 +2943,7 @@ export function mountDinoLegend(root) {
     drawPlayer();
     for (const e of list) if (e.kind === "bolt") drawEnt(e);
     drawBreath();
-    drawChunks(ctx, chunks);
+    try { drawChunks(ctx, chunks); } catch (_) {}
 
     for (const p of particles) {
       const a = Math.max(0, p.life / p.max);
@@ -2960,10 +2979,12 @@ export function mountDinoLegend(root) {
   }
 
   function drawEnt(e) {
-    if (ENEMIES[e.kind] && ENEMIES[e.kind].draw) {
-      ENEMIES[e.kind].draw(ctx, e, enemyApi());
-      return;
-    }
+    try {
+      if (ENEMIES && ENEMIES[e.kind] && ENEMIES[e.kind].draw) {
+        ENEMIES[e.kind].draw(ctx, e, enemyApi());
+        return;
+      }
+    } catch (_) {}
 
     if (!art) return;
     const x = Math.round(e.x);
@@ -3577,7 +3598,7 @@ export function mountDinoLegend(root) {
     }
     ctx.globalAlpha = 1;
     // Style rank
-    {
+    try {
       const st = style.snapshot();
       const rankCol = st.rank === "S" ? "#ff2a6a" : st.rank === "A" ? "#ffb020" : st.rank === "B" ? "#2ad0ff" : color;
       drawText(ctx, "RANK " + st.rank, 10, 48, hs, rankCol);
@@ -3591,7 +3612,7 @@ export function mountDinoLegend(root) {
       if (st.lastPopT > 0 && st.lastPop) {
         drawText(ctx, st.lastPop, W / 2 - measure(st.lastPop, hs) / 2, 100, hs, rankCol);
       }
-    }
+    } catch (_) {}
 
     if (superCharges > 0 || superGranted) {
       const sx = segX + 10 * (seg + 3) + 10;
