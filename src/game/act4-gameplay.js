@@ -137,7 +137,7 @@ export function registerAct4Enemies(def, S, api) {
   // L22 — shadow self: flies at the height YOU were at 0.6 s ago. Keep changing altitude; do not be predictable.
   def("shadow_self", { role: "swarm", hp: 1, w: 44, h: 40, extra: 110, stompable: true, pts: 90, material: "ghost",
     init: () => ({ hist: [] }),
-    ai(e, dt, a) { const p = a.player; e.hist.push([a.now, p.y]); while (e.hist.length > 90) e.hist.shift(); const past = e.hist.find((h) => a.now - h[0] <= .6) || e.hist[0]; const ty = Math.min(G - e.h, past[1] + 20); e.y += (ty - e.y) * Math.min(1, dt * 14); },
+    ai(e, dt, a) { const p = a.player; const now = typeof a.now === "function" ? a.now() : (a.now || 0); e.hist = e.hist || []; e.hist.push([now, p.y]); while (e.hist.length > 90) e.hist.shift(); const past = e.hist.find((h) => now - h[0] <= .6) || e.hist[0]; const ty = Math.min(G - e.h, (past ? past[1] : p.y) + 20); e.y += (ty - e.y) * Math.min(1, dt * 14); },
     draw(ctx, e) { put(ctx, "shadowDino", e.age * 12, e, { alpha: .9 }); } });
 
   // L22 — star wisp: slow figure-8, pulls toward the player's lane. One hit pops it into a ring of 4 sparks (hurts). Shoot it far away.
