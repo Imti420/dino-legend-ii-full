@@ -2954,15 +2954,14 @@ export function mountDinoLegend(root) {
   }, sig);
 
   function drawWorld() {
-    // Act III / IV full-scene biomes
+    // Act III / IV full-scene biomes (background only — entities/player still draw below)
+    let actBg = false;
     if (biome && biome.act3) {
-      try { drawAct3World(ctx, biome.act3, t, scroll); drawAct3Fore(ctx, biome.act3, t, scroll); } catch (err) { console.warn(err); }
-      return;
+      try { drawAct3World(ctx, biome.act3, t, scroll); drawAct3Fore(ctx, biome.act3, t, scroll); actBg = true; } catch (err) { console.warn(err); }
+    } else if (biome && biome.act4) {
+      try { drawAct4World(ctx, biome.act4, t, scroll); drawAct4Fore(ctx, biome.act4, t, scroll); actBg = true; } catch (err) { console.warn(err); }
     }
-    if (biome && biome.act4) {
-      try { drawAct4World(ctx, biome.act4, t, scroll); drawAct4Fore(ctx, biome.act4, t, scroll); } catch (err) { console.warn(err); }
-      return;
-    }
+    if (!actBg) {
     // Gradient sky (trailer energy)
     const sky = ctx.createLinearGradient(0, 0, 0, GROUND);
     sky.addColorStop(0, biome.bg);
@@ -3143,6 +3142,7 @@ export function mountDinoLegend(root) {
         ctx.fillRect(x + 10, GROUND - 100, 8, 30);
       }
     }
+    } // end !actBg scenery
 
     const list = entities.filter((e) => e.alive);
     for (const e of list) if (groundish(e.kind)) drawEnt(e);
