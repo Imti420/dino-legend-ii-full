@@ -734,8 +734,53 @@ const CSS = `
   .cards { flex: 1.45; }
   .detail { flex: 0.9; position: sticky; top: 0; }
 }
+/* Final credits */
+.credits-wrap { position: relative; overflow: hidden; max-width: 420px; margin: 0 auto; text-align: center; }
+.credits-wrap h2.congrats {
+  font-size: clamp(18px, 4vw, 28px); color: #e85d04; margin: 0 0 6px;
+  text-shadow: 0 0 18px rgba(232,93,4,.55); animation: congratsPulse 1.1s ease-in-out infinite alternate;
+}
+.credits-wrap .thanks { font-size: 11px; color: #535353; margin: 0 0 14px; letter-spacing: 0.04em; }
+.credits-roll {
+  height: 160px; overflow: hidden; position: relative;
+  mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent);
+  -webkit-mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent);
+}
+.credits-inner {
+  animation: creditsScroll 14s linear infinite;
+  padding: 40px 0;
+}
+.credits-inner .role { font-size: 9px; opacity: .55; margin: 14px 0 4px; text-transform: uppercase; letter-spacing: .12em; }
+.credits-inner .name {
+  font-size: 16px; color: #1a1a1a; margin: 0 0 2px;
+  text-shadow: 0 0 12px rgba(255,176,32,.35);
+}
+.credits-inner .name.hero { font-size: 20px; color: #e85d04; }
+.confetti-layer {
+  pointer-events: none; position: absolute; inset: -20px -10px 0; overflow: hidden; height: 220px;
+}
+.confetti-layer span {
+  position: absolute; top: -12px; width: 8px; height: 10px;
+  animation: confettiFall linear forwards;
+  border-radius: 1px;
+}
+@keyframes confettiFall {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(240px) rotate(720deg); opacity: 0.15; }
+}
+@keyframes creditsScroll {
+  0% { transform: translateY(40%); }
+  100% { transform: translateY(-70%); }
+}
+@keyframes congratsPulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.04); }
+}
 @media (prefers-reduced-motion: reduce) {
   .btn, #pad button { transition: none; }
+  .credits-inner { animation: none; }
+  .confetti-layer span { animation: none; opacity: .7; }
+  .credits-wrap h2.congrats { animation: none; }
 }
 `;
 
@@ -2496,7 +2541,7 @@ export function mountDinoLegend(root) {
     if (cleared) prev.stars = Math.max(prev.stars || 0, stars);
     save.levels[id] = prev;
     if (cleared && level.id) save.unlocked = Math.max(save.unlocked, Math.min(LEVELS.length, level.id + 1));
-    if (cleared && level.id === 12) save.canPlus = true;
+    if (cleared && (level.id === 12 || level.id === LEVELS.length)) save.canPlus = true;
     persist();
     return cleared ? stars : prev.stars || 0;
   }
@@ -2507,6 +2552,28 @@ export function mountDinoLegend(root) {
     const stars = record(true);
     app.dataset.mode = mode;
     sfx.win();
+    // Final level: huge canvas confetti
+    if (level && level.id === LEVELS.length) {
+      trauma = 1;
+      flashA = 0.45;
+      for (let i = 0; i < 80; i++) {
+        const cols = ["#e85d04", "#ffb020", "#2ad0ff", "#ff2a6a", "#7affc0", "#fff6c0", "#ffffff"];
+        particles.push({
+          x: Math.random() * W,
+          y: -10 - Math.random() * 40,
+          vx: (Math.random() - 0.5) * 220,
+          vy: 80 + Math.random() * 220,
+          life: 1.4 + Math.random() * 1.2,
+          max: 2.4,
+          s: 3 + Math.floor(Math.random() * 5),
+          color: cols[i % cols.length],
+          g: 280,
+          kind: "ember",
+        });
+      }
+      banner = "CONGRATULATIONS";
+      bannerT = 3.5;
+    }
     renderOverlay(stars);
   }
 
@@ -2695,16 +2762,62 @@ export function mountDinoLegend(root) {
     } else if (mode === "clear") {
       const stars = earned || (save.levels[String(level.id)] || {}).stars || 1;
       const next = level.id > 0 && level.id < LEVELS.length;
-      overlay.innerHTML = modalHTML("Mile clear", level.name, `
-        <div class="bigstars">${starSVG(stars >= 1)}${starSVG(stars >= 2)}${starSVG(stars >= 3)}</div>
-        <p>Score ${padScore(score)}. ${stars >= 3 ? "Clean run." : stars === 2 ? "Par beaten." : "Clear it hotter for more stars."}</p>
-        ${level.id === 12 ? "<p>Omega falls. Legend+ is unlocked on the dashboard.</p>" : ""}
-        ${level.id === 6 ? "<p>The first road ends. The second road is open.</p>" : ""}
-        <div class="actions">
-          ${next ? `<button type="button" class="btn primary" data-act="next">Next mile</button>` : `<button type="button" class="btn primary" data-act="map">Dashboard</button>`}
-          <button type="button" class="btn" data-act="retry">Retry</button>
-          ${next ? `<button type="button" class="btn" data-act="map">Dashboard</button>` : ""}
-        </div>`);
+      const isFinale = level.id === LEVELS.length;
+      if (isFinale) {
+        const bits = [];
+        const cols = ["#e85d04","#ffb020","#2ad0ff","#ff2a6a","#7affc0","#fff6c0","#c8a0ff","#ffffff"];
+        for (let i = 0; i < 48; i++) {
+          const left = (Math.random() * 100).toFixed(1);
+          const delay = (Math.random() * 2.2).toFixed(2);
+          const dur = (2.2 + Math.random() * 2.4).toFixed(2);
+          const c = cols[i % cols.length];
+          const w = 6 + (i % 5);
+          bits.push(`<span style="left:${left}%;background:${c};width:${w}px;height:${w + 2}px;animation-delay:${delay}s;animation-duration:${dur}s"></span>`);
+        }
+        overlay.innerHTML = modalHTML("THE END", level.name, `
+          <div class="credits-wrap">
+            <div class="confetti-layer" aria-hidden="true">${bits.join("")}</div>
+            <h2 class="congrats">CONGRATULATIONS!</h2>
+            <p class="thanks">Thanks for playing.</p>
+            <div class="bigstars">${starSVG(stars >= 1)}${starSVG(stars >= 2)}${starSVG(stars >= 3)}</div>
+            <p>Score ${padScore(score)} &nbsp;·&nbsp; The Afterlight is yours.</p>
+            <div class="credits-roll" aria-label="Credits">
+              <div class="credits-inner">
+                <p class="role">Created by</p>
+                <p class="name hero">IMTI</p>
+                <p class="role">Built with</p>
+                <p class="name">GROK</p>
+                <p class="name">CLAUDE</p>
+                <p class="name">MANUS</p>
+                <p class="role">Dino Legend</p>
+                <p class="name">THE ROAD NEVER ENDS</p>
+                <p class="role">Thank you</p>
+                <p class="name hero">FOR PLAYING</p>
+                <p class="role">Created by</p>
+                <p class="name hero">IMTI</p>
+                <p class="role">Built with</p>
+                <p class="name">GROK</p>
+                <p class="name">CLAUDE</p>
+                <p class="name">MANUS</p>
+              </div>
+            </div>
+            <div class="actions">
+              <button type="button" class="btn primary" data-act="map">Dashboard</button>
+              <button type="button" class="btn" data-act="retry">Replay finale</button>
+            </div>
+          </div>`);
+      } else {
+        overlay.innerHTML = modalHTML("Mile clear", level.name, `
+          <div class="bigstars">${starSVG(stars >= 1)}${starSVG(stars >= 2)}${starSVG(stars >= 3)}</div>
+          <p>Score ${padScore(score)}. ${stars >= 3 ? "Clean run." : stars === 2 ? "Par beaten." : "Clear it hotter for more stars."}</p>
+          ${level.id === 12 ? "<p>Omega falls. Legend+ is unlocked on the dashboard.</p>" : ""}
+          ${level.id === 6 ? "<p>The first road ends. The second road is open.</p>" : ""}
+          <div class="actions">
+            ${next ? `<button type="button" class="btn primary" data-act="next">Next mile</button>` : `<button type="button" class="btn primary" data-act="map">Dashboard</button>`}
+            <button type="button" class="btn" data-act="retry">Retry</button>
+            ${next ? `<button type="button" class="btn" data-act="map">Dashboard</button>` : ""}
+          </div>`);
+      }
     }
   }
 
