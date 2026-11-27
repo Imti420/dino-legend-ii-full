@@ -3,8 +3,18 @@
 /* Legend III modules */
 
 import { drawSprite, stepChunks, drawChunks, shatter } from "./art.js";
-import { ENEMIES, materialDeath } from "./enemies.js";
+import { ENEMIES, materialDeath, def } from "./enemies.js";
 import { createStyle } from "./style.js";
+import { buildAct3Sprites, drawAct3World, drawAct3Fore, ACT3_BIOMES } from "./act3-art.js";
+import {
+  LEVELS_ACT3, registerAct3Enemies, BOSS_META_ACT3, BOSS_STATS as BOSS_STATS_ACT3,
+  PHASES_ACT3, SCRIPTS_ACT3, bossWeakZone as weakZone3, bossBody as bossBody3, drawAct3Boss,
+} from "./act3-gameplay.js";
+import { buildAct4Sprites, drawAct4World, drawAct4Fore, ACT4_BIOMES } from "./act4-art.js";
+import {
+  LEVELS_ACT4, registerAct4Enemies, registerAct4BossOps, BOSS_META_ACT4, BOSS_STATS_ACT4,
+  PHASES_ACT4, SCRIPTS_ACT4, bossWeakZone as weakZone4, bossBody as bossBody4, drawAct4Boss,
+} from "./act4-gameplay.js";
 
 const W = 640;
 const H = 360;
@@ -68,6 +78,14 @@ const BIOMES = {
   },
 };
 
+
+/* Act III + IV biomes (unique keys where they collide with Act I/II) */
+Object.assign(BIOMES, ACT3_BIOMES);
+const _a4 = { ...ACT4_BIOMES };
+if (_a4.crystal) { BIOMES.prism = { ..._a4.crystal, act4: "crystal" }; delete _a4.crystal; }
+if (_a4.storm) { BIOMES.thunder = { ..._a4.storm, act4: "storm" }; delete _a4.storm; }
+Object.assign(BIOMES, _a4);
+
 const BOSS_META = {
   cinder: {
     name: "Cinder Colossus",
@@ -80,6 +98,8 @@ const BOSS_META = {
   tempest: { name: "Tempest Wyrm", blurb: "Lightning and wind. Read the lines, duck the dive, burn the head." },
   warden: { name: "Obsidian Warden", blurb: "Armour does nothing until it overreaches. Dodge the charge, then punish." },
   omega: { name: "Omega Rex", blurb: "Three forms. One dinosaur. No more tricks." },
+  ...BOSS_META_ACT3,
+  ...BOSS_META_ACT4,
 };
 
 const LEVELS = [
@@ -272,6 +292,13 @@ const LEVELS = [
     foes: [["Everything", "Geysers, bolts, saws, drones, shades."], ["Omega Rex", BOSS_META.omega.blurb]],
     spawns: [{ t: "geyser", w: 0.12 }, { t: "bolt", w: 0.12 }, { t: "saw", w: 0.12 }, { t: "drone", w: 0.12 }, { t: "shade", w: 0.12 }, { t: "thunderbird", w: 0.1 }, { t: "golem", w: 0.1 }, { t: "meteor", w: 0.2 }],
   },
+  ...LEVELS_ACT3.map((L) => ({ ...L })),
+  ...LEVELS_ACT4.map((L) => {
+    const o = { ...L };
+    if (o.biome === "crystal") o.biome = "prism";
+    if (o.biome === "storm") o.biome = "thunder";
+    return o;
+  }),
 ];
 
 const PTS = {
@@ -365,7 +392,7 @@ const SCRIPTS = {
     ["wait", 0.5],
   ],
 };
-const PHASES = { omega: [0.66, 0.33], tempest: [0.5], warden: [0.5], cinder: [0.5], tyrant: [0.5] };
+const PHASES = { omega: [0.66, 0.33], tempest: [0.5], warden: [0.5], cinder: [0.5], tyrant: [0.5], ...PHASES_ACT3, ...PHASES_ACT4 };
 const SCRIPTS_II = {
   tempest: [
     ["wait", 0.7], ["tell", "bolts", 0.7], ["bolts"],
@@ -708,6 +735,7 @@ const CSS = `
 }
 `;
 
+try { Object.assign(SCRIPTS, SCRIPTS_ACT3 || {}, SCRIPTS_ACT4 || {}); } catch (_) {}
 function defaultSave() {
   const reduce = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   return { version: 1, unlocked: 1, selected: 1, sound: true, shake: !reduce, taught: false, levels: {}, plus: false, canPlus: false, daily: false, gauntletBest: 0 };
@@ -914,6 +942,9 @@ export function mountDinoLegend(root) {
   let diveSlam = false;
   let parryWindow = 0;
   let style = createStyle();
+  let jumpLog = [];
+  let actSprites = null;
+  let bossOpsExtra = {};
   let chunks = [];
   let camZoom = 1;
   let phase = "run";
@@ -1191,6 +1222,7 @@ export function mountDinoLegend(root) {
   function requestJump() {
     wantJump = true;
     jumpBuf = 0.12;
+    try { jumpLog.push(performance.now() / 1000); if (jumpLog.length > 40) jumpLog.shift(); } catch (_) {}
   }
 
   function playerBox() {
@@ -1369,6 +1401,16 @@ export function mountDinoLegend(root) {
     else if (kind === "saw") spawnSaw();
     else if (kind === "drone") spawnDrone();
     else if (kind === "shade") spawnShade();
+    else if (ENEMIES[kind]) {
+      const d = ENEMIES[kind];
+      const e = make({
+        kind, x: W + 12, y: GROUND - (d.h || 40), w: d.w || 40, h: d.h || 40,
+        hp: d.hp || 1, hittable: d.hittable !== false, hurts: d.hurts !== false,
+        extra: d.extra || 0, stompable: !!d.stompable, state: "idle", st: 0, flash: 0,
+        ...(d.init ? d.init() : {}),
+      });
+      try { d.spawn && d.spawn(e, enemyApi()); } catch (_) {}
+    }
   }
 
   function updateEntExtra(e, dt) {
@@ -1521,6 +1563,48 @@ export function mountDinoLegend(root) {
     } else if (name === "nova") {
       spawnShock("shock");
       boss.queued = (boss.queued || []).concat([{ t: 0.45, name: "slam" }]);
+    } else if (bossOpsExtra[name]) {
+      try { bossOpsExtra[name](boss, enemyApi()); } catch (_) {}
+    } else if (name === "beam") {
+      boss.beam = 0.9;
+      make({ kind: "beam", screen: true, x: 0, y: (boss?.y || 100) + 90, w: (boss?.x || W) + 10, h: 22, life: 0.9, hurts: true, hittable: false });
+    } else if (name === "scarabs") {
+      for (let i = 0; i < 5; i++) spawnKind("scarab");
+    } else if (name === "sandwave") {
+      make({ kind: "wave", screen: true, x: boss.x, y: GROUND - 26, w: 70, h: 26, vx: -420, life: 2.0, hurts: true, hittable: false });
+    } else if (name === "sunfall") {
+      for (let i = 0; i < 4; i++) spawnMeteor(PX + 180 + i * 90);
+    } else if (name === "jaw") {
+      make({ kind: "zone", screen: true, x: boss.x - 40, y: boss.y + 40, w: 90, h: 80, life: 0.35, hurts: true, hittable: false });
+    } else if (name === "flash") {
+      flashA = Math.max(flashA, 0.5); if (boss) boss.flash = 0.2;
+    } else if (name === "tentacles") {
+      for (let i = 0; i < 3; i++) make({ kind: "proj", visual: "orb", screen: true, x: boss.x + 20, y: GROUND - 40 - i * 30, w: 18, h: 18, vx: -280 - i * 40, hp: 1, hittable: true, hurts: true, life: 2 });
+    } else if (name === "bubbles") {
+      for (let i = 0; i < 4; i++) make({ kind: "proj", visual: "orb", screen: true, x: boss.x + 40, y: GROUND - 60 - i * 40, w: 16, h: 16, vx: -200, vy: -40 + i * 20, hp: 1, hittable: true, hurts: true, life: 2.5 });
+    } else if (name === "shards") {
+      for (let i = 0; i < 5; i++) make({ kind: "proj", visual: "shard", screen: true, x: boss.x + 20, y: boss.y + 20, w: 14, h: 14, vx: -300 - i * 30, vy: -80 + i * 70, hp: 1, hittable: true, hurts: true, life: 2 });
+    } else if (name === "spit") {
+      make({ kind: "proj", visual: "orb", screen: true, x: boss.x + 10, y: GROUND - 40, w: 22, h: 22, vx: -380, hp: 1, hittable: true, hurts: true, life: 2 });
+    } else if (name === "sweep") {
+      make({ kind: "wave", screen: true, x: boss.x, y: GROUND - 26, w: 70, h: 26, vx: -420, life: 2.2, hurts: true, hittable: false });
+    } else if (name === "gears") {
+      for (let i = 0; i < 3; i++) make({ kind: "proj", visual: "gear", screen: false, x: boss.x + 10, y: GROUND - 40, w: 38, h: 38, vx: -300 - i * 90, hp: 99, hittable: false, hurts: true, delay: i * 0.55, life: 3 });
+    } else if (name === "chime") {
+      burst(boss.x + 110, boss.y + 112, "#ffe27a", 18, 220, { ring: true });
+    } else if (name === "steam") {
+      make({ kind: "cloud", screen: true, x: boss.x - 140, y: GROUND - 120, w: 140, h: 120, life: 1.2, hurts: true, hittable: false });
+    } else if (name === "bite") {
+      make({ kind: "zone", screen: true, x: boss.x - 40, y: boss.y + 40, w: 70, h: 80, life: 0.22, hurts: true, hittable: false });
+    } else if (name === "dash") {
+      boss.dashing = 0.8; boss.vxBoss = -620;
+    } else if (name === "shockwave") {
+      trauma = Math.min(1, trauma + 0.4);
+      make({ kind: "wave", screen: true, x: boss.x, y: GROUND - 40, w: 50, h: 40, vx: -480, life: 1.8, hurts: true, hittable: false });
+    } else if (name === "clones") {
+      for (let i = 0; i < 3; i++) spawnKind("shadow_self");
+    } else if (name === "eclipse") {
+      boss.eclipse = 2.2;
     }
     sfx.tick();
   }
@@ -1529,6 +1613,8 @@ export function mountDinoLegend(root) {
     cinder: { w: 150, h: 112, hp: 58 }, tyrant: { w: 168, h: 178, hp: 86 },
     tempest: { w: 170, h: 120, hp: 96 }, warden: { w: 160, h: 150, hp: 110 },
     omega: { w: 190, h: 190, hp: 150 },
+    ...BOSS_STATS_ACT3,
+    ...BOSS_STATS_ACT4,
   };
   function beginBoss() {
     phase = "boss";
@@ -1752,7 +1838,10 @@ export function mountDinoLegend(root) {
 
   function enemyApi() {
     return {
-      player, W, H, GROUND, speed, sfx, popText, burst,
+      player, W, H, GROUND, speed, sfx, popText, burst, make,
+      now: () => performance.now() / 1000,
+      jumpLog,
+      hurt: () => { try { if (player.iframe <= 0) hurt(); } catch (_) {} },
       shake: (n) => { trauma = Math.min(1, trauma + n); },
       spark: (x, y) => burst(x, y, "#ffb040", 6, 100),
       spawnWave: (x) => {
@@ -1823,6 +1912,18 @@ export function mountDinoLegend(root) {
     boss.charge = Math.max(0, (boss.charge || 0) - dt);
     boss.pulse = (boss.pulse || 0) + dt;
     if (boss.beam > 0) boss.beam -= dt;
+    if (boss.stun > 0) { boss.stun -= dt; if (boss.stun <= 0) boss.vuln = false; }
+    if (boss.dashing > 0) {
+      boss.dashing -= dt;
+      boss.x += (boss.vxBoss || -500) * dt;
+      if (boss.dashing <= 0) boss.vxBoss = 0;
+    } else if (boss.vxBoss) {
+      // glide home
+      const home = W - boss.w - 40;
+      boss.x += (home - boss.x) * Math.min(1, dt * 2.2);
+      if (Math.abs(boss.x - home) < 4) { boss.x = home; boss.vxBoss = 0; }
+    }
+    if (boss.eclipse > 0) boss.eclipse -= dt;
     if (boss.dead) {
       boss.dieT -= dt;
       if (Math.floor(boss.dieT * 14) % 2 === 0) {
@@ -2204,16 +2305,28 @@ export function mountDinoLegend(root) {
         }
       }
       if (boss && boss.entered && !boss.dead && !b.bossHit && boss.hurtCd <= 0) {
-        const body = { x: boss.x + 16, y: boss.y + 18, w: boss.w - 28, h: boss.h - 24 };
-        if (overlap(b, body)) {
-          if (boss.vuln === false) {
+        const wz = (weakZone3(boss) || weakZone4(boss));
+        const body = (bossBody3(boss) || bossBody4(boss)) || { x: boss.x + 16, y: boss.y + 18, w: boss.w - 28, h: boss.h - 24 };
+        const onWeak = wz && overlap(b, wz);
+        const onBody = overlap(b, body);
+        if (onWeak || onBody) {
+          if (boss.vuln === false && !onWeak) {
             b.bossHit = true;
             popText(boss.x, boss.y, "CLANG");
             burst(b.x, b.y, "#ffb040", 4, 80);
             continue;
           }
           b.bossHit = true;
-          const hit = b.dmg || 1;
+          let hit = b.dmg || 1;
+          // Act III/IV: full damage only on weak zone; chip elsewhere (and never lethal chip)
+          if (wz !== undefined && (boss.type === "pharaoh" || boss.type === "leviathan" || boss.type === "extinction" || boss.type === "hydra" || boss.type === "chronos" || boss.type === "umbra")) {
+            if (onWeak) hit = Math.max(hit, 3);
+            else {
+              hit = Math.max(1, Math.floor(hit * 0.15));
+              if (boss.hp - hit < 1) hit = Math.max(0, boss.hp - 1);
+              popText(boss.x, boss.y, "CLANG");
+            }
+          }
           boss.hp -= hit;
           boss.hurtCd = hit > 1 ? 0.08 : 0.11;
           boss.flash = 0.07;
@@ -2799,6 +2912,15 @@ export function mountDinoLegend(root) {
   }, sig);
 
   function drawWorld() {
+    // Act III / IV full-scene biomes
+    if (biome && biome.act3) {
+      try { drawAct3World(ctx, biome.act3, t, scroll); drawAct3Fore(ctx, biome.act3, t, scroll); } catch (err) { console.warn(err); }
+      return;
+    }
+    if (biome && biome.act4) {
+      try { drawAct4World(ctx, biome.act4, t, scroll); drawAct4Fore(ctx, biome.act4, t, scroll); } catch (err) { console.warn(err); }
+      return;
+    }
     // Gradient sky (trailer energy)
     const sky = ctx.createLinearGradient(0, 0, 0, GROUND);
     sky.addColorStop(0, biome.bg);
@@ -3024,6 +3146,13 @@ export function mountDinoLegend(root) {
 
   function drawEnt(e) {
     try {
+      if (e.kind === "beam" || e.kind === "wave" || e.kind === "cloud" || e.kind === "zone") {
+        ctx.globalAlpha = 0.55 + 0.25 * Math.sin((e.age || 0) * 20);
+        ctx.fillStyle = e.kind === "beam" ? "#ff2a9a" : e.kind === "cloud" ? "#ffffff" : e.kind === "zone" ? "#7a3aff" : "#ffb040";
+        ctx.fillRect(e.x, e.y, e.w, e.h);
+        ctx.globalAlpha = 1;
+        return;
+      }
       if (ENEMIES && ENEMIES[e.kind] && ENEMIES[e.kind].draw) {
         ENEMIES[e.kind].draw(ctx, e, enemyApi());
         return;
@@ -3310,7 +3439,9 @@ export function mountDinoLegend(root) {
   }
 
   function drawBoss() {
-    if (boss.type === "tempest") drawTempest();
+    if (boss.type === "pharaoh" || boss.type === "leviathan" || boss.type === "extinction") drawAct3Boss(ctx, boss);
+    else if (boss.type === "hydra" || boss.type === "chronos" || boss.type === "umbra") drawAct4Boss(ctx, boss);
+    else if (boss.type === "tempest") drawTempest();
     else if (boss.type === "warden") drawWarden();
     else if (boss.type === "omega") drawOmega();
     else if (boss.type === "tyrant") drawTyrant();
@@ -3768,6 +3899,18 @@ export function mountDinoLegend(root) {
   window.addEventListener("resize", resize, sig);
   ro = new ResizeObserver(() => resize());
   ro.observe(stage);
+
+  // Act III + IV registration (once)
+  try {
+    if (!actSprites) {
+      const S3 = buildAct3Sprites(2);
+      const S4 = buildAct4Sprites(2);
+      actSprites = { ...S3, ...S4, flash: { ...(S3.flash || {}), ...(S4.flash || {}) } };
+      registerAct3Enemies(def, actSprites, { make, player, burst, sfx, now: () => performance.now()/1000 });
+      registerAct4Enemies(def, actSprites, { make, player, burst, sfx, now: () => performance.now()/1000 });
+      registerAct4BossOps(bossOpsExtra, { make, player, burst, sfx, now: () => performance.now()/1000 });
+    }
+  } catch (err) { console.warn("Act register", err); }
 
   if (typeof window !== "undefined") {
     window.__dino = {
