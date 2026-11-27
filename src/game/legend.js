@@ -987,6 +987,9 @@ export function mountDinoLegend(root) {
   let imtiReady = false;
   let imtiUsed = false;
   let imtiFx = 0;
+  let coilReady = false;
+  let coilUsed = false;
+  let coilFx = 0;
   let airChain = 0;
   let diveSlam = false;
   let parryWindow = 0;
@@ -1266,6 +1269,107 @@ export function mountDinoLegend(root) {
     burst(m.x + 40, m.y, "#2ad0ff", 30, 360, { ring: true, big: true });
     burst(m.x + 120, m.y, "#a0e8ff", 20, 280, { ring: true });
     popText(player.x + 10, player.y - 30, "IMTI BLAST");
+  }
+
+  function fireCoilBananaBlast() {
+    if (mode !== "play" || player.dead || intro > 0) return;
+    if (!coilReady || coilUsed) return;
+    if (!level) return;
+    if (!superGranted && phase === "run" && dist < (level.length || 0) * 0.5) return;
+    coilUsed = true;
+    coilReady = false;
+    coilFx = 1.35;
+    banner = "SUPER COIL BANANA BLASTER XX49";
+    bannerT = 2.2;
+    hitstop = 0.28;
+    trauma = 1;
+    flashA = 0.85;
+    sfx.roar();
+    sfx.explode();
+    sfx.roar();
+    const m = mouthPos();
+    // 100× fire — thick banana-coil wave + screen wipe damage
+    for (let i = 0; i < 22; i++) {
+      const yOff = -70 + i * 7;
+      entities.push({
+        kind: "bolt",
+        screen: true,
+        alive: true,
+        x: m.x - 10,
+        y: m.y + yOff - 12,
+        w: 72,
+        h: 36,
+        vx: 780 + i * 12,
+        life: 1.35,
+        hittable: false,
+        hurts: false,
+        touched: [],
+        bossHit: false,
+        dmg: 100,
+        super: true,
+        coil: true,
+      });
+    }
+    // Spiral coil projectiles
+    for (let i = 0; i < 16; i++) {
+      const ang = (i / 16) * Math.PI * 2;
+      entities.push({
+        kind: "bolt",
+        screen: true,
+        alive: true,
+        x: m.x,
+        y: m.y + Math.sin(ang) * 20,
+        w: 28,
+        h: 28,
+        vx: 520 + Math.cos(ang) * 80,
+        life: 1.1,
+        hittable: false,
+        hurts: false,
+        touched: [],
+        bossHit: false,
+        dmg: 100,
+        coil: true,
+        coilSpin: ang,
+      });
+    }
+    for (const e of entities) {
+      if (!e.alive || !e.hittable || e.kind === "bolt") continue;
+      if (e.x + e.w < player.x - 20) continue;
+      if (e.x > player.x + 520) continue;
+      damageEnt(e, 100);
+    }
+    if (boss && boss.entered && !boss.dead) {
+      boss.vuln = true;
+      boss.stun = Math.max(boss.stun || 0, 1.6);
+      const hit = 100;
+      boss.hp -= hit;
+      boss.hurtCd = 0.35;
+      boss.flash = 0.35;
+      popText(boss.x + 20, boss.y - 20, "XX49 -" + hit);
+      burst(boss.x + boss.w * 0.4, boss.y + 30, "#ffe060", 40, 420, { ring: true, big: true });
+      burst(boss.x + boss.w * 0.5, boss.y + 50, "#ff2a6a", 28, 360, { ring: true, big: true });
+      if (boss.hp <= 0) killBoss();
+    }
+    for (let k = 0; k < 6; k++) {
+      burst(m.x + 30 + k * 40, m.y + (k % 2 ? -20 : 20), k % 2 ? "#ffe060" : "#ff8a00", 18, 300, { ring: true, big: true });
+    }
+    // Confetti-style banana bits
+    for (let i = 0; i < 36; i++) {
+      particles.push({
+        x: m.x + Math.random() * 80,
+        y: m.y + (Math.random() - 0.5) * 60,
+        vx: 200 + Math.random() * 400,
+        vy: (Math.random() - 0.5) * 280,
+        life: 0.7 + Math.random() * 0.6,
+        max: 1.3,
+        s: 4 + Math.floor(Math.random() * 6),
+        color: ["#ffe060", "#ffb020", "#fff6c0", "#ff8a00", "#ffffff"][i % 5],
+        g: 120,
+        kind: "ember",
+      });
+    }
+    popText(player.x, player.y - 40, "BANANA XX49");
+    popText(player.x + 20, player.y - 60, "BLLLLASSSHT");
   }
 
   function requestJump() {
@@ -2206,19 +2310,22 @@ export function mountDinoLegend(root) {
     if (level && !superGranted && !gauntlet && phase === "run" && dist >= level.length * 0.5) {
       superGranted = true;
       imtiReady = true;
+      coilReady = true;
       superCharges = 3;
       superBurn = 0;
-      banner = "SUPER FIRE ×3  ·  IMTI READY";
+      banner = "SUPER ×3  ·  IMTI (I)  ·  XX49 (C)";
       bannerT = 1.7;
       trauma = Math.min(1, trauma + 0.25);
       flashA = Math.max(flashA, 0.28);
       sfx.roar();
       burst(player.x + 50, player.y + 30, "#ff2a6a", 18, 220, { ring: true, big: true });
     }
-    // Boss phase still allows IMTI if unlocked during the run
+    // Boss phase still allows powers unlocked mid-run
     if (superGranted && !imtiUsed) imtiReady = true;
+    if (superGranted && !coilUsed) coilReady = true;
 
     if (imtiFx > 0) imtiFx = Math.max(0, imtiFx - dt);
+    if (coilFx > 0) coilFx = Math.max(0, coilFx - dt);
 
     const breathing = keys.fire && !fireLock && heat > 0 && intro <= 0;
     if (breathing) {
@@ -2605,6 +2712,9 @@ export function mountDinoLegend(root) {
     imtiReady = false;
     imtiUsed = false;
     imtiFx = 0;
+    coilReady = false;
+    coilUsed = false;
+    coilFx = 0;
     airChain = 0;
     diveSlam = false;
     parryWindow = 0;
@@ -2890,7 +3000,7 @@ export function mountDinoLegend(root) {
           </div>
         </aside>
       </div>
-      <p class="help">Jump / Duck / Fire (F). Stomp foes mid-air · Duck in air = dive-slam · Tap fire near a projectile to PARRY · Near-miss = GRAZE. Halfway: SUPER ×3 + IMTI (I). Style rank multiplies score. Stars: clear, beat par, ≥4 hearts.</p>
+      <p class="help">Jump / Duck / Fire (F). Stomp foes mid-air · Duck in air = dive-slam · Tap fire near a projectile to PARRY · Near-miss = GRAZE. Halfway: SUPER ×3 + IMTI (I) + XX49 BANANA (C). Style rank multiplies score. Stars: clear, beat par, ≥4 hearts.</p>
       <div class="foot">
         <button type="button" class="pill" id="btn-sound" data-act="sound">${save.sound ? "Sound on" : "Sound off"}</button>
         <button type="button" class="pill" id="btn-shake" data-act="shake">${save.shake ? "Shake on" : "Shake off"}</button>
@@ -2971,6 +3081,7 @@ export function mountDinoLegend(root) {
     if (code === "ArrowDown" || code === "KeyS" || code === "ControlLeft" || code === "ControlRight") return "duck";
     if (code === "KeyF" || code === "KeyJ" || code === "KeyK") return "fire";
     if (code === "KeyI") return "imti";
+    if (code === "KeyC") return "coil";
     if (code === "KeyP" || code === "Escape") return "pause";
     if (code === "Enter") return "confirm";
     return "";
@@ -2998,6 +3109,9 @@ export function mountDinoLegend(root) {
     }
     else if (role === "imti") {
       if (mode === "play") fireImtiBlast();
+    }
+    else if (role === "coil") {
+      if (mode === "play") fireCoilBananaBlast();
     }
     else if (role === "pause") {
       if (mode === "play" || mode === "pause") togglePause();
@@ -3470,7 +3584,20 @@ export function mountDinoLegend(root) {
       ctx.fillRect(x + 20, y + 12, 6, 6);
       ctx.globalAlpha = 1;
     } else if (e.kind === "bolt") {
-      if (e.imti) {
+      if (e.coil) {
+        // Banana / coil XX49 bolt
+        ctx.fillStyle = "#7a4a00";
+        ctx.fillRect(x, y + 2, e.w, e.h - 2);
+        ctx.fillStyle = "#ffe060";
+        ctx.fillRect(x + 2, y, e.w - 4, e.h - 4);
+        ctx.fillStyle = "#ff8a00";
+        ctx.fillRect(x + 4, y + 4, e.w - 10, Math.max(4, e.h - 10));
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(x + 8, y + 3, 12, 5);
+        // coil stripes
+        ctx.fillStyle = "#c87800";
+        for (let s = 0; s < 4; s++) ctx.fillRect(x + 6 + s * 10, y + 2, 3, e.h - 4);
+      } else if (e.imti) {
         ctx.fillStyle = "#1a60c8";
         ctx.fillRect(x, y + 2, e.w, e.h - 2);
         ctx.fillStyle = "#2ad0ff";
@@ -3912,6 +4039,49 @@ export function mountDinoLegend(root) {
       drawText(ctx, "IMTI BLAST", Math.round(W / 2 - measure("IMTI BLAST", hs) / 2) + 1, 71, hs, "#2ad0ff");
       ctx.restore();
     }
+    if (coilFx > 0) {
+      const a = coilFx / 1.35;
+      const m = mouthPos();
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, a * 1.15);
+      // Full-screen banana wash
+      ctx.fillStyle = `rgba(255, 200, 40, ${0.18 * a})`;
+      ctx.fillRect(0, 0, W, H);
+      // Spiral coils from mouth
+      for (let ring = 0; ring < 5; ring++) {
+        const R = 30 + ring * 28 + (1 - a) * 80;
+        for (let i = 0; i < 12; i++) {
+          const ang = (i / 12) * Math.PI * 2 + t * 8 + ring * 0.4;
+          const px = m.x + Math.cos(ang) * R + (1 - a) * 200;
+          const py = m.y + Math.sin(ang) * R * 0.55;
+          const s = 10 - ring;
+          ctx.fillStyle = i % 2 ? "#ffe060" : "#ff8a00";
+          ctx.fillRect(Math.round(px), Math.round(py), s, s);
+        }
+      }
+      // Giant forward banana stream
+      for (let i = 0; i < 50; i++) {
+        const p = i / 50;
+        const s = (1 - p) * 34 + 8;
+        const wob = Math.sin(i * 2.5 + t * 50) * p * 40;
+        const px = m.x + p * 420 - s / 2;
+        const py = m.y + wob - s / 2;
+        let col = "#5a3000";
+        if (p < 0.15) col = "#ffffff";
+        else if (p < 0.4) col = "#fff6c0";
+        else if (p < 0.7) col = "#ffe060";
+        else col = "#ff8a00";
+        ctx.fillStyle = col;
+        ctx.fillRect(Math.round(px), Math.round(py), Math.ceil(s), Math.ceil(s * 1.2));
+      }
+      const hs = 3;
+      const line1 = "SUPER COIL BANANA BLASTER XX49";
+      const line2 = "BLLLLASSSHT";
+      drawText(ctx, line1, Math.round(W / 2 - measure(line1, hs) / 2), 52, hs, "#ffffff");
+      drawText(ctx, line1, Math.round(W / 2 - measure(line1, hs) / 2) + 1, 53, hs, "#ffe060");
+      drawText(ctx, line2, Math.round(W / 2 - measure(line2, hs) / 2), 72, hs, "#ff8a00");
+      ctx.restore();
+    }
     const breathing = mode === "play" && !player.dead && keys.fire && !fireLock && heat > 0;
     if (!breathing) return;
     const m = mouthPos();
@@ -3993,9 +4163,16 @@ export function mountDinoLegend(root) {
       if (imtiReady && !imtiUsed) {
         drawText(ctx, "I:IMTI", ix, 28, hs, "#2ad0ff");
       } else if (imtiUsed) {
-        drawText(ctx, "IMTI", ix, 28, hs, color);
         ctx.globalAlpha = 0.35;
         drawText(ctx, "IMTI", ix, 28, hs, color);
+        ctx.globalAlpha = 1;
+      }
+      const cx = ix + measure("I:IMTI", hs) + 12;
+      if (coilReady && !coilUsed) {
+        drawText(ctx, "C:XX49", cx, 28, hs, "#ffe060");
+      } else if (coilUsed) {
+        ctx.globalAlpha = 0.35;
+        drawText(ctx, "XX49", cx, 28, hs, color);
         ctx.globalAlpha = 1;
       }
     }
