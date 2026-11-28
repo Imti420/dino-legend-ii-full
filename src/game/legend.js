@@ -2401,9 +2401,11 @@ export function mountDinoLegend(root) {
 
     physics(dt);
 
-    if (phase === "boss") speed += (250 - speed) * Math.min(1, dt * 2);
+    // Base world speed for this frame, then player dial (comfort → chaos)
+    let baseSpeed = speed;
+    if (phase === "boss") baseSpeed = speed + (250 - speed) * Math.min(1, dt * 2);
     else if (gauntlet) {
-      speed = Math.min(820, 460 + dist * 0.012);
+      baseSpeed = Math.min(820, 460 + dist * 0.012);
       gClock += dt;
       if (gClock >= 20) {
         gClock = 0;
@@ -2415,14 +2417,16 @@ export function mountDinoLegend(root) {
         bannerT = 1.1;
       }
     } else if (level) {
-      const u = Math.min(1, dist / level.length);
-      speed = level.speed[0] + (level.speed[1] - level.speed[0]) * u;
+      const u = Math.min(1, dist / Math.max(1, level.length));
+      baseSpeed = level.speed[0] + (level.speed[1] - level.speed[0]) * u;
     }
-    if (save.plus && phase !== "boss") speed *= 1.12;
-    // Player speed dial (comfort zone → chaos)
-    speed *= clampSpeedMul(save.speedMul ?? 1);
+    if (save.plus && phase !== "boss") baseSpeed *= 1.12;
+    const dial = clampSpeedMul(save.speedMul ?? 1);
+    speed = baseSpeed * dial;
     scroll += speed * dt;
     driftClouds(dt);
+    // High dial: encounters arrive faster in *time* as well as space
+    if (dial > 1.01) spawnCd = Math.max(0, spawnCd - dt * (dial - 1) * 0.85);
 
     // Halfway through a level: grant 3 super-fire charges (3× damage each use)
     if (level && !superGranted && !gauntlet && phase === "run" && dist >= level.length * 0.5) {
@@ -2701,7 +2705,7 @@ export function mountDinoLegend(root) {
   }
 
   function updateDemo(dt) {
-    speed = 280;
+    speed = 280 * clampSpeedMul(save.speedMul ?? 1);
     scroll += speed * dt;
     player.x = PX;
     player.y = GROUND - 94;
@@ -2890,7 +2894,6 @@ export function mountDinoLegend(root) {
   }
 
   function resetSim() {
-    try { actCache.key = ""; actCache.q = -1e9; } catch (_) {}
     entities = [];
     particles = [];
     floaters = [];
@@ -3442,43 +3445,27 @@ export function mountDinoLegend(root) {
     if (document.visibilityState === "visible" && audio.ctx && audio.ctx.state === "suspended") audio.ctx.resume();
   }, sig);
 
-  // Cached Act III/IV backdrops (heavy procedural art) — redraw every ~12px of scroll
-  let actCache = { key: "", q: -1e9, cv: null, g: null };
-  function drawActBackdropCached() {
+  // Act III/IV: always draw live with real scroll so parallax never freezes
+  function drawActBackdropLive() {
     const key = (biome && (biome.act3 || biome.act4)) || "";
     if (!key) return false;
-    if (!actCache.cv) {
-      actCache.cv = document.createElement("canvas");
-      actCache.cv.width = W;
-      actCache.cv.height = H;
-      actCache.g = actCache.cv.getContext("2d");
-    }
-    const step = 14;
-    const q = Math.floor(scroll / step) * step;
-    // also refresh ~8x/sec so animated bits (gears, neon pulse) still move a little
-    const tick = Math.floor(t * 8);
-    if (actCache.key !== key + ":" + tick || actCache.q !== q) {
-      const g = actCache.g;
-      g.setTransform(1, 0, 0, 1, 0, 0);
-      g.clearRect(0, 0, W, H);
-      try {
-        if (biome.act3) drawAct3World(g, biome.act3, t, q);
-        else drawAct4World(g, biome.act4, t, q);
-      } catch (err) { console.warn(err); }
-      actCache.key = key + ":" + tick;
-      actCache.q = q;
-    }
-    ctx.drawImage(actCache.cv, 0, 0);
     try {
-      if (biome.act3) drawAct3Fore(ctx, biome.act3, t, scroll);
-      else drawAct4Fore(ctx, biome.act4, t, scroll);
-    } catch (_) {}
+      if (biome.act3) {
+        drawAct3World(ctx, biome.act3, t, scroll);
+        drawAct3Fore(ctx, biome.act3, t, scroll);
+      } else {
+        drawAct4World(ctx, biome.act4, t, scroll);
+        drawAct4Fore(ctx, biome.act4, t, scroll);
+      }
+    } catch (err) {
+      console.warn(err);
+    }
     return true;
   }
 
   function drawWorld() {
     // Act III / IV full-scene biomes (background only — entities/player still draw below)
-    const actBg = drawActBackdropCached();
+    const actBg = drawActBackdropLive();
     if (!actBg) {
     // Gradient sky (trailer energy)
     const sky = ctx.createLinearGradient(0, 0, 0, GROUND);
@@ -4514,16 +4501,19 @@ export function mountDinoLegend(root) {
     if (!last) last = ts;
     let dt = (ts - last) / 1000;
     last = ts;
-    if (dt > 0.033) dt = 0.033; // hard cap ~30fps sim when tab hitching
+    if (dt > 0.05) dt = 0.05;
     acc += dt;
     let steps = 0;
-    // Max 2 physics steps per frame to avoid spiral of death on slow devices
-    while (acc >= 1 / 60 && steps < 2) {
+    // Allow more catch-up when the speed dial is high so 2× actually feels 2×
+    const dial = clampSpeedMul(save.speedMul ?? 1);
+    const maxSteps = Math.min(6, 3 + Math.floor(dial));
+    while (acc >= 1 / 60 && steps < maxSteps) {
       update(1 / 60);
       acc -= 1 / 60;
       steps += 1;
     }
-    if (steps === 2) acc = 0;
+    // Keep a little debt so we don't discard the dial; hard cap 3 frames
+    if (acc > 3 / 60) acc = 3 / 60;
     if (!player.dead && mode === "play") player.anim += dt * (speed / 220);
     render();
     raf = requestAnimationFrame(loop);
