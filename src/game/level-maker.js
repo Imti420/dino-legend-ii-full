@@ -490,37 +490,51 @@ export function openLevelMaker(api) {
       alert("Could not build level: " + (err && err.message ? err.message : err));
       return;
     }
-    if (!startAuthored) {
-      alert("Play engine missing. Refresh the page and try again.");
+    if (typeof startAuthored !== "function") {
+      alert("Play engine missing. Hard-refresh the page (Ctrl+Shift+R) and try again.");
       return;
     }
+    // Keep maker in DOM but hide; always restore
+    const restore = () => {
+      try { host.style.display = ""; } catch (_) {}
+      try { renderAll(); } catch (_) {}
+    };
     host.style.display = "none";
-    try {
-      startAuthored(runtime, {
-        mode: "test",
-        onEnd: ({ cleared, clearMs, deathX }) => {
-          host.style.display = "";
-          if (cleared) {
-            const clean = LM.validate(lv, catalog, biomeKeys).errors.length === 0;
-            if (clean) {
-              lv = { ...lv, verified: true, clearMs: clearMs || 0 };
-              hist.push(lv);
-              saveDraft(lv);
-              alert("Cleared! Publish unlocked.");
-            } else {
-              alert("You finished, but fix the red problems before Publish.");
+    // Start on next frame so UI can hide cleanly
+    requestAnimationFrame(() => {
+      let started = false;
+      try {
+        started = startAuthored(runtime, {
+          mode: "test",
+          onEnd: ({ cleared, clearMs, deathX }) => {
+            restore();
+            if (cleared) {
+              const clean = LM.validate(lv, catalog, biomeKeys).errors.length === 0;
+              if (clean) {
+                lv = { ...lv, verified: true, clearMs: clearMs || 0 };
+                hist.push(lv);
+                saveDraft(lv);
+                alert("Cleared! Publish unlocked.");
+              } else {
+                alert("Finished — fix red problems before Publish.");
+              }
+            } else if (deathX != null) {
+              playhead = Math.max(0, deathX);
             }
-          } else if (deathX != null) {
-            playhead = Math.max(0, deathX);
-          }
-          renderAll();
-        },
-      });
-    } catch (err) {
-      host.style.display = "";
-      alert("Playtest failed: " + (err && err.message ? err.message : err));
-      console.error(err);
-    }
+            renderAll();
+          },
+        });
+      } catch (err) {
+        console.error(err);
+        restore();
+        alert("Playtest failed: " + (err && err.message ? err.message : err));
+        return;
+      }
+      if (started === false) {
+        restore();
+        alert("Could not start playtest. Hard-refresh and try again.");
+      }
+    });
   }
 
   function publish() {

@@ -1636,14 +1636,15 @@ export function mountDinoLegend(root) {
       });
       try { d.spawn && d.spawn(e, enemyApi()); } catch (_) {}
       // world placement: entry.x is track distance
-      e.x = W + (entry.x - dist);
+      // Screen x = world position - distance scrolled (player stays at PX)
+      e.x = entry.x - dist;
       if (entry.y != null) e.y = entry.y;
       return e;
     }
     spawnKind(kind);
     const e = entities[entities.length - 1];
     if (e && entities.length > before) {
-      e.x = W + (entry.x - dist);
+      e.x = entry.x - dist;
       if (entry.y != null) e.y = entry.y;
       Object.assign(e, opts);
     }
@@ -2664,7 +2665,7 @@ export function mountDinoLegend(root) {
           level.biome = seg.biome;
         }
       }
-      if (!gauntlet && dist >= level.length) {
+      if (!gauntlet && level.length > 0 && dist >= level.length) {
         if (level.boss) beginBoss();
         else win();
       } else if (!gauntlet && level.boss && phase === "run" && dist >= level.length - (level.custom ? 1500 : 0) && level.custom && dist >= level.length - 1500) {
@@ -2877,9 +2878,11 @@ export function mountDinoLegend(root) {
       authoredMode = false;
       authoredMeta = null;
       spawnList = [];
+      spawnIdx = 0;
       mode = "dash";
       app.dataset.mode = "dash";
-      try { cb({ cleared: true, clearMs: ms, deathX: dist }); } catch (_) {}
+      try { renderOverlay(0); } catch (_) {}
+      try { cb({ cleared: true, clearMs: ms, deathX: dist }); } catch (e) { console.error(e); }
       return;
     }
     mode = "clear";
@@ -2919,9 +2922,11 @@ export function mountDinoLegend(root) {
       authoredMode = false;
       authoredMeta = null;
       spawnList = [];
+      spawnIdx = 0;
       mode = "dash";
       app.dataset.mode = "dash";
-      try { cb({ cleared: false, clearMs: 0, deathX: dx }); } catch (_) {}
+      try { renderOverlay(0); } catch (_) {}
+      try { cb({ cleared: false, clearMs: 0, deathX: dx }); } catch (e) { console.error(e); }
       return;
     }
     mode = "over";
@@ -3005,87 +3010,106 @@ export function mountDinoLegend(root) {
   }
   function startAuthored(runtime, opts = {}) {
     try { ensureActRegistered(); } catch (_) {}
+    try { unlock(); } catch (_) {}
+    const len = Math.max(3000, Number(runtime && runtime.length) || 12000);
+    const spd = Array.isArray(runtime && runtime.speed) ? runtime.speed : [600, 760];
+    const biomeKey = (runtime && (runtime.biome || (runtime.segments && runtime.segments[0] && runtime.segments[0].biome))) || "day";
     authoredMode = true;
-    authoredMeta = { mode: opts.mode || "play", onEnd: opts.onEnd || null, deathX: 0 };
-    spawnList = (runtime.spawnList || []).slice().sort((a, b) => a.x - b.x);
+    authoredMeta = { mode: (opts && opts.mode) || "test", onEnd: (opts && opts.onEnd) || null };
+    spawnList = ((runtime && runtime.spawnList) || []).slice().sort((a, b) => a.x - b.x);
     spawnIdx = 0;
     gauntlet = false;
     level = {
-      id: 0,
-      name: runtime.name || "Custom",
-      biome: runtime.biome || (runtime.segments && runtime.segments[0] && runtime.segments[0].biome) || "neon",
-      length: runtime.length || 12000,
-      speed: runtime.speed || [600, 760],
-      boss: runtime.boss || null,
+      id: -1,
+      name: (runtime && runtime.name) || "Custom",
+      biome: biomeKey,
+      length: len,
+      speed: [Number(spd[0]) || 600, Number(spd[1]) || 760],
+      boss: (runtime && runtime.boss) || null,
       shower: 0,
       custom: true,
       authored: true,
-      segments: runtime.segments || null,
+      segments: (runtime && runtime.segments) || null,
       foes: [],
       blurb: "Custom level",
+      spawns: [],
     };
-    biome = BIOMES[level.biome] || BIOMES.day || BIOMES.neon;
-    if (!biome || !biome.bg) biome = BIOMES.day;
-    resetSim();
+    biome = BIOMES[level.biome] || BIOMES.day || Object.values(BIOMES)[0];
+    if (!biome) biome = { bg: "#0a0a12", bg2: "#1a1020", ground: "#150807", mesa: "#1b0a08", mesa2: "#120606", dc: "#f2e6d8" };
+    try { resetSim(); } catch (err) { console.error("[dino] resetSim", err); }
+    player = groundPlayer();
+    player.dead = false;
+    hearts = save.plus ? 4 : 5;
+    deadT = 0;
     speed = level.speed[0];
+    dist = 0;
+    phase = "run";
+    intro = 0.85;
     mode = "play";
     app.dataset.mode = "play";
-    phase = "run";
-    intro = 0.6;
     banner = level.name;
     bannerT = 1.4;
-    renderOverlay();
+    try { stage.style.background = biome.bg || "#0a0a12"; } catch (_) {}
+    try { renderOverlay(0); } catch (_) {}
     try { sfx.tick(); } catch (_) {}
+    return true;
   }
 
   function startLevel(id) {
     authoredMode = false; authoredMeta = null; spawnList = []; spawnIdx = 0;
     try { ensureActRegistered(); } catch (_) {}
     jumpLog = [];
-    id = Number(id) || 0;
+    id = Math.floor(Number(id) || 0);
+    if (id < 1) id = Math.max(1, Number(save.unlocked) || 1);
     const L = LEVELS[id - 1];
     const unlocked = Math.max(1, Number(save.unlocked) || 1);
     if (!L) {
+      console.warn("[dino] no level", id);
       mode = "dash";
       app.dataset.mode = "dash";
       renderOverlay(0);
       return false;
     }
     if (id > unlocked) {
-      // Never enter play for locked miles — stay on dashboard
       mode = "dash";
       app.dataset.mode = "dash";
-      biome = BIOMES.day;
-      stage.style.background = biome.bg;
-      sfx.tick();
+      try { sfx.tick(); } catch (_) {}
       renderOverlay(0);
       return false;
     }
     try {
-      unlock();
+      try { unlock(); } catch (_) {}
       gauntlet = false;
-      if (save.daily) reseedDaily();
+      if (save.daily) try { reseedDaily(); } catch (_) {}
       level = L;
       biome = BIOMES[L.biome] || BIOMES.day;
       if (!biome || !biome.bg) biome = BIOMES.day;
       selected = id;
       save.selected = id;
-      persist();
+      try { persist(); } catch (_) {}
       resetSim();
+      player = groundPlayer();
+      player.dead = false;
+      hearts = save.plus ? 4 : 5;
+      deadT = 0;
       mode = "play";
       app.dataset.mode = "play";
-      stage.style.background = biome.bg || "#f7f7f7";
+      try { stage.style.background = biome.bg || "#f7f7f7"; } catch (_) {}
       renderOverlay(0);
-      sfx.click();
+      try { sfx.click(); } catch (_) {}
       return true;
     } catch (err) {
       console.error("[dino] startLevel failed", err);
+      // Still try to enter play if we have a level
+      if (level) {
+        mode = "play";
+        app.dataset.mode = "play";
+        try { renderOverlay(0); } catch (_) {}
+        return true;
+      }
       mode = "dash";
       app.dataset.mode = "dash";
-      level = null;
-      biome = BIOMES.day;
-      stage.style.background = biome.bg;
-      renderOverlay(0);
+      try { renderOverlay(0); } catch (_) {}
       return false;
     }
   }
@@ -3315,7 +3339,10 @@ export function mountDinoLegend(root) {
       return;
     }
     if (act === "play") startLevel(selected);
-    else if (act === "retry" && level) startLevel(level.id);
+    else if (act === "retry" && level) {
+      if (level.id > 0) startLevel(level.id);
+      else enterDash();
+    }
     else if (act === "next" && level) startLevel(Math.min(LEVELS.length, level.id + 1));
     else if (act === "maker") {
       try { ensureActRegistered(); } catch (_) {}
