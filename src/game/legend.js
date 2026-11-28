@@ -5,6 +5,8 @@
 import { drawSprite, stepChunks, drawChunks, shatter } from "./art.js";
 import { ENEMIES, materialDeath, def } from "./enemies.js";
 import { createStyle } from "./style.js";
+import * as LM from "./level-maker-core.js";
+import { openLevelMaker } from "./level-maker.js";
 import { buildAct3Sprites, drawAct3World, drawAct3Fore, ACT3_BIOMES } from "./act3-art.js";
 import {
   LEVELS_ACT3, registerAct3Enemies, BOSS_META_ACT3, BOSS_STATS as BOSS_STATS_ACT3,
@@ -1618,6 +1620,36 @@ export function mountDinoLegend(root) {
   function spawnShade() {
     make({ kind: "shade", x: W + 12, y: GROUND - 60, w: 34, h: 60, hp: 3, hittable: true, hurts: false, extra: 25, phase: 0, solid: false, flick: 0 });
   }
+  function spawnAuthored(entry) {
+    const kind = entry.t;
+    const opts = entry.opts || {};
+    // pre-apply opts for gates etc by temporary entity fields via ENEMIES path
+    const before = entities.length;
+    if (ENEMIES[kind]) {
+      const d = ENEMIES[kind];
+      const e = make({
+        kind, x: W + 12, y: GROUND - (d.h || 40), w: d.w || 40, h: d.h || 40,
+        hp: d.hp || 1, hittable: d.hittable !== false, hurts: d.hurts !== false,
+        extra: d.extra || 0, stompable: !!d.stompable, state: "idle", st: 0, flash: 0,
+        ...(d.init ? d.init() : {}),
+        ...opts,
+      });
+      try { d.spawn && d.spawn(e, enemyApi()); } catch (_) {}
+      // world placement: entry.x is track distance
+      e.x = W + (entry.x - dist);
+      if (entry.y != null) e.y = entry.y;
+      return e;
+    }
+    spawnKind(kind);
+    const e = entities[entities.length - 1];
+    if (e && entities.length > before) {
+      e.x = W + (entry.x - dist);
+      if (entry.y != null) e.y = entry.y;
+      Object.assign(e, opts);
+    }
+    return e;
+  }
+
   function spawnKind(kind) {
     if (kind === "cactus") spawnCactus();
     else if (kind === "ptero") spawnPtero();
@@ -2618,10 +2650,35 @@ export function mountDinoLegend(root) {
       runT += dt;
       dist += speed * dt;
       score += speed * dt * 0.05 * style.mult();
+      // Authored speed ramp
+      if (authoredMode && level.speed) {
+        const u = Math.min(1, dist / Math.max(1, level.length));
+        speed = level.speed[0] + (level.speed[1] - level.speed[0]) * u;
+        if (save.plus) speed *= 1.12;
+      }
+      // Segment biome switch for custom levels
+      if (level.segments && level.segments.length) {
+        const seg = level.segments.find(s => dist >= s.from && dist < s.to) || level.segments[level.segments.length - 1];
+        if (seg && BIOMES[seg.biome] && biome !== BIOMES[seg.biome]) {
+          biome = BIOMES[seg.biome];
+          level.biome = seg.biome;
+        }
+      }
       if (!gauntlet && dist >= level.length) {
         if (level.boss) beginBoss();
         else win();
+      } else if (!gauntlet && level.boss && phase === "run" && dist >= level.length - (level.custom ? 1500 : 0) && level.custom && dist >= level.length - 1500) {
+        // custom boss arena: stop spawning, start boss when near end
+        if (dist >= level.length - 400) beginBoss();
       }
+      if (authoredMode && spawnList.length) {
+        // Authored: spawn by world distance, no random
+        const viewRight = dist + W + 80;
+        while (spawnIdx < spawnList.length && spawnList[spawnIdx].x < viewRight) {
+          const entry = spawnList[spawnIdx++];
+          spawnAuthored(entry);
+        }
+      } else {
       spawnCd -= dt;
       if (spawnCd <= 0) {
         if (furthestX() > W - 170) spawnCd = 0.22;
@@ -2630,6 +2687,7 @@ export function mountDinoLegend(root) {
           const base = 0.92 + Math.random() * 0.38;
           spawnCd = Math.max(0.7, base * (0.82 + 420 / Math.max(280, speed)));
         }
+      }
       }
       if (level.shower) {
         showerT -= dt;
@@ -2813,6 +2871,17 @@ export function mountDinoLegend(root) {
 
   function win() {
     if (mode !== "play") return;
+    if (authoredMode && authoredMeta && authoredMeta.onEnd) {
+      const ms = Math.floor(runT * 1000);
+      const cb = authoredMeta.onEnd;
+      authoredMode = false;
+      authoredMeta = null;
+      spawnList = [];
+      mode = "dash";
+      app.dataset.mode = "dash";
+      try { cb({ cleared: true, clearMs: ms, deathX: dist }); } catch (_) {}
+      return;
+    }
     mode = "clear";
     const stars = record(true);
     app.dataset.mode = mode;
@@ -2844,6 +2913,17 @@ export function mountDinoLegend(root) {
 
   function gameOver() {
     if (mode !== "play") return;
+    if (authoredMode && authoredMeta && authoredMeta.onEnd) {
+      const cb = authoredMeta.onEnd;
+      const dx = dist;
+      authoredMode = false;
+      authoredMeta = null;
+      spawnList = [];
+      mode = "dash";
+      app.dataset.mode = "dash";
+      try { cb({ cleared: false, clearMs: 0, deathX: dx }); } catch (_) {}
+      return;
+    }
     mode = "over";
     if (gauntlet) {
       save.gauntletBest = Math.max(save.gauntletBest || 0, Math.floor(dist));
@@ -2923,7 +3003,43 @@ export function mountDinoLegend(root) {
     renderOverlay(0);
     sfx.click();
   }
+  function startAuthored(runtime, opts = {}) {
+    try { ensureActRegistered(); } catch (_) {}
+    authoredMode = true;
+    authoredMeta = { mode: opts.mode || "play", onEnd: opts.onEnd || null, deathX: 0 };
+    spawnList = (runtime.spawnList || []).slice().sort((a, b) => a.x - b.x);
+    spawnIdx = 0;
+    gauntlet = false;
+    level = {
+      id: 0,
+      name: runtime.name || "Custom",
+      biome: runtime.biome || (runtime.segments && runtime.segments[0] && runtime.segments[0].biome) || "neon",
+      length: runtime.length || 12000,
+      speed: runtime.speed || [600, 760],
+      boss: runtime.boss || null,
+      shower: 0,
+      custom: true,
+      authored: true,
+      segments: runtime.segments || null,
+      foes: [],
+      blurb: "Custom level",
+    };
+    biome = BIOMES[level.biome] || BIOMES.day || BIOMES.neon;
+    if (!biome || !biome.bg) biome = BIOMES.day;
+    resetSim();
+    speed = level.speed[0];
+    mode = "play";
+    app.dataset.mode = "play";
+    phase = "run";
+    intro = 0.6;
+    banner = level.name;
+    bannerT = 1.4;
+    renderOverlay();
+    try { sfx.tick(); } catch (_) {}
+  }
+
   function startLevel(id) {
+    authoredMode = false; authoredMeta = null; spawnList = []; spawnIdx = 0;
     try { ensureActRegistered(); } catch (_) {}
     jumpLog = [];
     id = Number(id) || 0;
@@ -3161,6 +3277,7 @@ export function mountDinoLegend(root) {
       <div class="foot">
         <button type="button" class="pill" id="btn-sound" data-act="sound">${save.sound ? "Sound on" : "Sound off"}</button>
         <button type="button" class="pill" id="btn-shake" data-act="shake">${save.shake ? "Shake on" : "Shake off"}</button>
+        <button type="button" class="pill" data-act="maker">Make a Level</button>
         <button type="button" class="pill" data-act="gauntlet">Gauntlet ${save.gauntletBest ? padScore(save.gauntletBest) : ""}</button>
         <button type="button" class="pill" data-act="plus" ${save.canPlus ? "" : "disabled"}>${save.plus ? "Legend+ on" : "Legend+"}</button>
         <button type="button" class="pill" data-act="daily">${save.daily ? "Daily on" : "Daily seed"}</button>
@@ -3200,6 +3317,18 @@ export function mountDinoLegend(root) {
     if (act === "play") startLevel(selected);
     else if (act === "retry" && level) startLevel(level.id);
     else if (act === "next" && level) startLevel(Math.min(LEVELS.length, level.id + 1));
+    else if (act === "maker") {
+      try { ensureActRegistered(); } catch (_) {}
+      openLevelMaker({
+        root,
+        catalog: LM.buildCatalog(ENEMIES),
+        biomeKeys: Object.keys(BIOMES),
+        levels: LEVELS,
+        toRuntime: LM.toRuntime,
+        startAuthored,
+        art: { ENEMIES, BIOMES, drawAct3World, drawAct4World, ACT3_BIOMES, ACT4_BIOMES },
+      });
+    }
     else if (act === "gauntlet") startGauntlet();
     else if (act === "plus") { if (save.canPlus) { save.plus = !save.plus; persist(); renderOverlay(0); } }
     else if (act === "daily") { save.daily = !save.daily; if (save.daily) reseedDaily(); persist(); renderOverlay(0); }
@@ -4419,6 +4548,12 @@ export function mountDinoLegend(root) {
       skipTo: (frac) => { dist = (level?.length || 0) * frac; },
       god: () => { hearts = 99; },
       spawn: spawnKind,
+      startAuthored,
+      getRegistry: () => ENEMIES,
+      getBiomes: () => Object.keys(BIOMES),
+      getLevels: () => LEVELS,
+      LM,
+
       boss: () => { if (level && level.boss) beginBoss(); },
       state: () => ({
         mode, phase, hearts, score: Math.floor(score), dist: Math.floor(dist),
