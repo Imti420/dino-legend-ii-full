@@ -718,6 +718,26 @@ const CSS = `
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .actions .btn { flex: 1; }
 .foot { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
+.speed-dial {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin: 10px 0 4px; padding: 8px 10px;
+  background: rgba(0,0,0,.06); border: 2px solid #535353; border-radius: 6px;
+}
+.speed-dial .sd-label { font-size: 10px; letter-spacing: .06em; opacity: .85; min-width: 4.5em; }
+.speed-dial .sd-val { font-size: 12px; color: #e85d04; min-width: 3.5em; text-align: center; }
+.speed-dial button.sd {
+  min-width: 36px; height: 32px; padding: 0 8px;
+  font-family: inherit; font-size: 14px; cursor: pointer;
+  background: #f7f7f7; border: 2px solid #535353; color: #535353;
+}
+.speed-dial button.sd:hover, .speed-dial button.sd:focus-visible { background: #e85d04; color: #fff; border-color: #e85d04; outline: none; }
+.speed-dial .sd-presets { display: flex; flex-wrap: wrap; gap: 4px; }
+.speed-dial .sd-presets button {
+  font-family: inherit; font-size: 9px; padding: 6px 8px; cursor: pointer;
+  background: transparent; border: 2px solid #535353; color: #535353;
+}
+.speed-dial .sd-presets button.on { background: #e85d04; border-color: #e85d04; color: #fff; }
+.speed-dial .sd-hint { width: 100%; font-size: 9px; opacity: .6; margin: 0; }
 .help { margin-top: 10px; font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.45; }
 .modal-wrap { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .modal { width: min(440px, 100%); background: #f7f7f7; color: #535353; border: 3px solid #535353; box-shadow: 6px 6px 0 #535353; padding: 16px; }
@@ -787,16 +807,29 @@ const CSS = `
 try { Object.assign(SCRIPTS, SCRIPTS_ACT3 || {}, SCRIPTS_ACT4 || {}); } catch (_) {}
 function defaultSave() {
   const reduce = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  return { version: 1, unlocked: 1, selected: 1, sound: true, shake: !reduce, taught: false, levels: {}, plus: false, canPlus: false, daily: false, gauntletBest: 0 };
+  return { version: 1, unlocked: 1, selected: 1, sound: true, shake: !reduce, taught: false, levels: {}, plus: false, canPlus: false, daily: false, gauntletBest: 0, speedMul: 1 };
 }
 
+const SPEED_PRESETS = [0.6, 0.8, 1, 1.25, 1.5, 1.75, 2];
+function clampSpeedMul(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 1;
+  return Math.max(0.5, Math.min(2.25, Math.round(n * 100) / 100));
+}
+function speedLabel(m) {
+  const x = clampSpeedMul(m);
+  if (Math.abs(x - 1) < 0.01) return "1× normal";
+  return x.toFixed(2).replace(/\.?0+$/, "") + "×";
+}
 function loadSave() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return defaultSave();
     const parsed = JSON.parse(raw);
     if (!parsed || parsed.version !== 1) return defaultSave();
-    return Object.assign(defaultSave(), parsed, { levels: parsed.levels || {} });
+    const s = Object.assign(defaultSave(), parsed, { levels: parsed.levels || {} });
+    s.speedMul = clampSpeedMul(s.speedMul ?? 1);
+    return s;
   } catch {
     return defaultSave();
   }
@@ -2386,6 +2419,8 @@ export function mountDinoLegend(root) {
       speed = level.speed[0] + (level.speed[1] - level.speed[0]) * u;
     }
     if (save.plus && phase !== "boss") speed *= 1.12;
+    // Player speed dial (comfort zone → chaos)
+    speed *= clampSpeedMul(save.speedMul ?? 1);
     scroll += speed * dt;
     driftClouds(dt);
 
@@ -2990,6 +3025,40 @@ export function mountDinoLegend(root) {
     renderOverlay(0);
   }
 
+  function speedDialHTML() {
+    const m = clampSpeedMul(save.speedMul ?? 1);
+    const presets = SPEED_PRESETS.map((p) => {
+      const on = Math.abs(p - m) < 0.01 ? " on" : "";
+      const lab = p === 1 ? "1×" : p + "×";
+      return `<button type="button" class="${on}" data-act="speed-set" data-mul="${p}">${lab}</button>`;
+    }).join("");
+    return `<div class="speed-dial" role="group" aria-label="Game speed">
+      <span class="sd-label">SPEED</span>
+      <button type="button" class="sd" data-act="speed-down" aria-label="Slower">−</button>
+      <span class="sd-val" id="speed-val">${speedLabel(m)}</span>
+      <button type="button" class="sd" data-act="speed-up" aria-label="Faster">+</button>
+      <div class="sd-presets">${presets}</div>
+      <p class="sd-hint">Leave the comfort zone · [ and ] keys also work in-run</p>
+    </div>`;
+  }
+
+  function nudgeSpeed(dir) {
+    const cur = clampSpeedMul(save.speedMul ?? 1);
+    let next = cur;
+    if (dir < 0) {
+      const lo = SPEED_PRESETS.filter((p) => p < cur - 0.001);
+      next = lo.length ? lo[lo.length - 1] : Math.max(0.5, cur - 0.1);
+    } else {
+      const hi = SPEED_PRESETS.filter((p) => p > cur + 0.001);
+      next = hi.length ? hi[0] : Math.min(2.25, cur + 0.1);
+    }
+    save.speedMul = clampSpeedMul(next);
+    persist();
+    banner = "SPEED " + speedLabel(save.speedMul).toUpperCase();
+    bannerT = 0.9;
+    try { sfx.click(); } catch (_) {}
+  }
+
   function togglePause() {
     if (player.dead) return;
     if (mode === "play") mode = "pause";
@@ -3015,6 +3084,7 @@ export function mountDinoLegend(root) {
     else if (mode === "pause") {
       overlay.innerHTML = modalHTML("Paused", level ? level.name : "Dino Legend", `
         <p>The road is holding its breath.</p>
+        ${speedDialHTML()}
         <div class="actions">
           <button type="button" class="btn primary" data-act="resume">Resume</button>
           <button type="button" class="btn" data-act="map">Dashboard</button>
@@ -3158,10 +3228,12 @@ export function mountDinoLegend(root) {
           </div>
         </aside>
       </div>
-      <p class="help">Jump / Duck / Fire (F). Stomp foes mid-air · Duck in air = dive-slam · Tap fire near a projectile to PARRY · Near-miss = GRAZE. Halfway: SUPER ×3 + IMTI (I) + XX49 BANANA (C). Style rank multiplies score. Stars: clear, beat par, ≥4 hearts.</p>
+      <p class="help">Jump / Duck / Fire (F). Stomp foes mid-air · Duck in air = dive-slam · Tap fire near a projectile to PARRY · Near-miss = GRAZE. Halfway: SUPER ×3 + IMTI (I) + XX49 BANANA (C). Speed dial on dashboard / pause ([ ] in-run). Style rank multiplies score. Stars: clear, beat par, ≥4 hearts.</p>
+      ${speedDialHTML()}
       <div class="foot">
         <button type="button" class="pill" id="btn-sound" data-act="sound">${save.sound ? "Sound on" : "Sound off"}</button>
         <button type="button" class="pill" id="btn-shake" data-act="shake">${save.shake ? "Shake on" : "Shake off"}</button>
+        <button type="button" class="pill" id="btn-speed" data-act="speed-cycle">Speed ${speedLabel(save.speedMul ?? 1)}</button>
         <button type="button" class="pill" data-act="gauntlet">Gauntlet ${save.gauntletBest ? padScore(save.gauntletBest) : ""}</button>
         <button type="button" class="pill" data-act="plus" ${save.canPlus ? "" : "disabled"}>${save.plus ? "Legend+ on" : "Legend+"}</button>
         <button type="button" class="pill" data-act="daily">${save.daily ? "Daily on" : "Daily seed"}</button>
@@ -3220,6 +3292,23 @@ export function mountDinoLegend(root) {
       persist();
       const b = root.querySelector("#btn-shake");
       if (b) b.textContent = save.shake ? "Shake on" : "Shake off";
+    } else if (act === "speed-down") {
+      nudgeSpeed(-1);
+      renderOverlay(0);
+    } else if (act === "speed-up") {
+      nudgeSpeed(1);
+      renderOverlay(0);
+    } else if (act === "speed-set") {
+      save.speedMul = clampSpeedMul(btn.dataset.mul);
+      persist();
+      sfx.click();
+      banner = "SPEED " + speedLabel(save.speedMul).toUpperCase();
+      bannerT = 0.9;
+      renderOverlay(0);
+    } else if (act === "speed-cycle") {
+      nudgeSpeed(1);
+      if (save.speedMul >= 2) { save.speedMul = 0.6; persist(); }
+      renderOverlay(0);
     } else if (act === "reset") {
       if (!resetArmed) {
         resetArmed = true;
@@ -3241,6 +3330,8 @@ export function mountDinoLegend(root) {
     if (code === "KeyI") return "imti";
     if (code === "KeyC") return "coil";
     if (code === "KeyP" || code === "Escape") return "pause";
+    if (code === "BracketLeft" || code === "Minus") return "speedDown";
+    if (code === "BracketRight" || code === "Equal") return "speedUp";
     if (code === "Enter") return "confirm";
     return "";
   }
@@ -3270,6 +3361,18 @@ export function mountDinoLegend(root) {
     }
     else if (role === "coil") {
       if (mode === "play") fireCoilBananaBlast();
+    }
+    else if (role === "speedDown") {
+      if (mode === "play" || mode === "pause" || mode === "dash") {
+        nudgeSpeed(-1);
+        if (mode === "pause" || mode === "dash") renderOverlay(0);
+      }
+    }
+    else if (role === "speedUp") {
+      if (mode === "play" || mode === "pause" || mode === "dash") {
+        nudgeSpeed(1);
+        if (mode === "pause" || mode === "dash") renderOverlay(0);
+      }
     }
     else if (role === "pause") {
       if (mode === "play" || mode === "pause") togglePause();
@@ -4336,6 +4439,10 @@ export function mountDinoLegend(root) {
     }
     ctx.globalAlpha = 1;
     if (combo >= 2) drawText(ctx, "x" + Math.min(8, combo), segX + 10 * (seg + 3) + 8, 28, hs, "#e85d04");
+    const sm = clampSpeedMul(save.speedMul ?? 1);
+    if (Math.abs(sm - 1) > 0.01) {
+      drawText(ctx, speedLabel(sm).toUpperCase(), W - measure(speedLabel(sm).toUpperCase(), hs) - 12, 28, hs, "#e85d04");
+    }
 
     if (boss && boss.entered) {
       const bw = Math.min(360, cssW * 0.55);
