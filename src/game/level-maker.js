@@ -118,7 +118,8 @@ export function openLevelMaker(api) {
     const pub = $("#lm-pub");
     pub.disabled = !can;
     pub.textContent = can ? "Publish" : lv.verified ? "Fix errors" : "Clear to publish";
-    $("#lm-play").disabled = v.errors.length > 0;
+    $("#lm-play").disabled = false;
+    $("#lm-play").title = v.errors.length ? (v.errors.length + " problems — click to play anyway") : "Playtest this level";
     $("#lm-undo").disabled = !hist.canUndo;
     $("#lm-redo").disabled = !hist.canRedo;
   }
@@ -290,13 +291,33 @@ export function openLevelMaker(api) {
 
   function placeAt(worldX, lane) {
     if (!tool) return;
-    const x = LM.snapX(Math.max(LM.LIMITS.safeStart, Math.min(lv.length - LM.LIMITS.endPad, worldX)));
-    const meta = catalog[tool.t];
+    const meta = catalog[tool.t] || { lane: "ground", lethal: true };
+    let x = LM.snapX(Math.max(LM.LIMITS.safeStart, Math.min(lv.length - (lv.boss ? LM.LIMITS.bossArena : LM.LIMITS.endPad) - 20, worldX)));
+    // Auto-nudge away from other lethal hazards so Playtest is not blocked
+    if (meta.lethal !== false) {
+      const need = Math.round(LM.jumpSpan(LM.speedAt(lv, x)) * 0.9);
+      const sorted = [...lv.objects].sort((a, b) => a.x - b.x);
+      for (let guard = 0; guard < 50; guard++) {
+        let clash = false;
+        for (const o of sorted) {
+          const om = catalog[o.t];
+          if (!om || !om.lethal) continue;
+          if (Math.abs(o.x - x) < need) {
+            x = LM.snapX(o.x + need);
+            clash = true;
+            break;
+          }
+        }
+        if (!clash) break;
+      }
+      x = Math.min(x, lv.length - (lv.boss ? LM.LIMITS.bossArena : LM.LIMITS.endPad) - 20);
+    }
     const o = { id: LM.uid(), x, t: tool.t };
-    if (meta && meta.lane === "air" && !meta.lockY) o.lane = lane || "mid";
+    if (meta.lane === "air" && !meta.lockY) o.lane = lane || "mid";
     if (tool.opts) o.opts = { ...tool.opts };
     lv = { ...lv, objects: [...lv.objects, o] };
     selected = new Set([o.id]);
+    playhead = x;
     push();
   }
 
@@ -328,6 +349,20 @@ export function openLevelMaker(api) {
     if (a === "play") playtest();
     if (a === "pub") publish();
     if (a === "import") importCode();
+    if (a === "spread") {
+      const need = Math.round(LM.jumpSpan(LM.speedAt(lv, LM.LIMITS.safeStart)) * 0.95);
+      let x = LM.LIMITS.safeStart;
+      const objs = [...lv.objects].sort((a, b) => a.x - b.x).map((o) => {
+        const m = catalog[o.t];
+        if (m && m.lethal) {
+          if (o.x < x) o = { ...o, x: LM.snapX(x) };
+          x = o.x + need;
+        }
+        return o;
+      });
+      lv = { ...lv, objects: objs };
+      push();
+    }
     if (a === "new") {
       lv = LM.newLevel(biomeKeys.includes("neon") ? "neon" : biomeKeys[0]);
       hist = new LM.History(lv);
@@ -362,7 +397,8 @@ export function openLevelMaker(api) {
 
   // timeline click
   $("#lm-scroll").addEventListener("click", (e) => {
-    const rect = $("#lm-track").getBoundingClientRect();
+    const track = $("#lm-track");
+    const rect = track.getBoundingClientRect();
     const x = (e.clientX - rect.left) / timelineScale;
     if (e.target.classList.contains("lm-dot")) {
       selected = new Set([e.target.dataset.id]);
@@ -370,11 +406,9 @@ export function openLevelMaker(api) {
       renderAll();
       return;
     }
-    playhead = Math.max(0, Math.min(lv.length, x));
+    playhead = Math.max(0, Math.min(lv.length, LM.snapX(x)));
     if (tool) {
-      const yRatio = 0.5;
-      const lane = yRatio < 0.33 ? "high" : yRatio < 0.66 ? "mid" : "low";
-      placeAt(x, lane);
+      placeAt(playhead, "mid");
     } else {
       renderTimeline();
       drawPreview();
@@ -441,26 +475,52 @@ export function openLevelMaker(api) {
   function playtest() {
     const v = LM.validate(lv, catalog, biomeKeys);
     if (v.errors.length) {
-      alert(v.errors[0]);
+      const msg = "This level has " + v.errors.length + " problem(s):\n\n• " + v.errors.slice(0, 4).join("\n• ") +
+        "\n\nPlay anyway? (Publish still needs a clean clear.)";
+      if (!confirm(msg)) return;
+    }
+    if (!lv.objects.length && !lv.boss) {
+      alert("Place at least one enemy or a boss first.");
       return;
     }
-    const runtime = toRuntime(lv, catalog);
+    let runtime;
+    try {
+      runtime = toRuntime(lv, catalog);
+    } catch (err) {
+      alert("Could not build level: " + (err && err.message ? err.message : err));
+      return;
+    }
+    if (!startAuthored) {
+      alert("Play engine missing. Refresh the page and try again.");
+      return;
+    }
     host.style.display = "none";
-    startAuthored(runtime, {
-      mode: "test",
-      onEnd: ({ cleared, clearMs, deathX }) => {
-        host.style.display = "";
-        if (cleared) {
-          lv = { ...lv, verified: true, clearMs: clearMs || 0 };
-          hist.push(lv);
-          saveDraft(lv);
-          alert("Cleared! Publish unlocked.");
-        } else if (deathX != null) {
-          playhead = deathX;
-        }
-        renderAll();
-      },
-    });
+    try {
+      startAuthored(runtime, {
+        mode: "test",
+        onEnd: ({ cleared, clearMs, deathX }) => {
+          host.style.display = "";
+          if (cleared) {
+            const clean = LM.validate(lv, catalog, biomeKeys).errors.length === 0;
+            if (clean) {
+              lv = { ...lv, verified: true, clearMs: clearMs || 0 };
+              hist.push(lv);
+              saveDraft(lv);
+              alert("Cleared! Publish unlocked.");
+            } else {
+              alert("You finished, but fix the red problems before Publish.");
+            }
+          } else if (deathX != null) {
+            playhead = Math.max(0, deathX);
+          }
+          renderAll();
+        },
+      });
+    } catch (err) {
+      host.style.display = "";
+      alert("Playtest failed: " + (err && err.message ? err.message : err));
+      console.error(err);
+    }
   }
 
   function publish() {
@@ -582,6 +642,7 @@ function shellHTML() {
           <button type="button" data-lm="save">Save</button>
           <button type="button" data-lm="my">My Levels</button>
           <button type="button" data-lm="import">Import code</button>
+          <button type="button" data-lm="spread">Auto-spread</button>
         </div>
       </div>
     </div>

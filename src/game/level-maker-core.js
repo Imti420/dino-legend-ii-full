@@ -15,7 +15,7 @@ export const LANES = { ground: null, low: G - 70, mid: G - 130, high: G - 200 };
    cost:  difficulty points (used for the difficulty meter).  opts: editable options -> allowed values. */
 export const META = {
   // legacy (Acts I–II). Agent: fill label/lane from the registry if different.
-  cactus: { label: "Cactus", lane: "ground", lethal: true, cost: 1 }, drone: { label: "Drone", lane: "air", lethal: false, cost: 2 },
+  cactus: { label: "Cactus", lane: "ground", lethal: true, cost: 1 }, bat: { label: "Ember Bat", lane: "air", lethal: false, cost: 1 }, vine: { label: "Vine", lane: "trap", lethal: true, cost: 2 }, boulder: { label: "Ice Boulder", lane: "ground", lethal: true, cost: 2 }, shade: { label: "Shade", lane: "ground", lethal: true, cost: 2 }, stalactite: { label: "Stalactite", lane: "fall", lethal: false, cost: 2, lockY: true }, beetle: { label: "Crystal Beetle", lane: "ground", lethal: false, cost: 2 }, drone: { label: "Drone", lane: "air", lethal: false, cost: 2 },
   saw: { label: "Saw", lane: "ground", lethal: true, cost: 2 }, ptero: { label: "Pterodactyl", lane: "air", lethal: false, cost: 2 },
   raptor: { label: "Raptor", lane: "ground", lethal: true, cost: 2 }, scorp: { label: "Scorpion", lane: "ground", lethal: true, cost: 2 },
   snake: { label: "Snake", lane: "ground", lethal: true, cost: 2 }, golem: { label: "Golem", lane: "ground", lethal: true, cost: 4 },
