@@ -1004,6 +1004,10 @@ export function mountDinoLegend(root) {
   let phase = "run";
   let intro = 0;
   let spawnCd = 1;
+  let authoredMode = false;
+  let authoredMeta = null;
+  let spawnList = [];
+  let spawnIdx = 0;
   let showerT = 10;
   let combo = 0;
   let comboT = 0;
